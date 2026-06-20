@@ -1,0 +1,1 @@
+3681:                    <h3 className="font-display font-semibold text-gray-900 mb-2">Subscription Details</h3>

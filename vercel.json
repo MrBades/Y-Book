@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "server.ts",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["data/db.json"]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "server.ts"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
+    },
+    {
+      "src": "/vite.svg",
+      "dest": "/vite.svg"
+    },
+    {
+      "src": "/((?!api).*)",
+      "dest": "/index.html"
+    }
+  ]
+}
