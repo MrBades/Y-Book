@@ -1,6 +1,0 @@
-{
-  "name": "Yeedem Books",
-  "description": "Digital ledger and invoicing app for micro-traders and SMEs with AI-powered input (text, voice, image) and robust manual fallback parser.",
-  "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
