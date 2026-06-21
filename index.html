@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yeedem Books</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="shortcut icon" type="image/png" href="/favicon.png" />
+    <!-- OG_META_TAGS_START -->
+    <meta name="description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Yeedem Books - Fast Bookkeeping & Invoicing" />
+    <meta property="og:description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
+    <meta property="og:image" content="/pwa_icon_logo.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Yeedem Books - Fast Bookkeeping & Invoicing" />
+    <meta name="twitter:description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
+    <meta name="twitter:image" content="/pwa_icon_logo.png" />
+    <!-- OG_META_TAGS_END -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/pwa_icon_logo.png" />
+    <meta name="theme-color" content="#0E1338" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => {
+              console.log('⚡ Yeedem Books PWA Service Worker registered scoping:', reg.scope);
+            })
+            .catch((err) => {
+              console.warn('⚠️ Service Worker registration skipped or failed:', err);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
+
