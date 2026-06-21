@@ -12,7 +12,7 @@
       "src": "server.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["data/db.json"]
+        "includeFiles": ["data/db.json", "dist/**"]
       }
     }
   ],
@@ -26,12 +26,28 @@
       "dest": "/assets/$1"
     },
     {
+      "src": "/favicon.png",
+      "dest": "/favicon.png"
+    },
+    {
+      "src": "/pwa_icon_logo.png",
+      "dest": "/pwa_icon_logo.png"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "/manifest.json"
+    },
+    {
+      "src": "/sw.js",
+      "dest": "/sw.js"
+    },
+    {
       "src": "/vite.svg",
       "dest": "/vite.svg"
     },
     {
       "src": "/((?!api).*)",
-      "dest": "/index.html"
+      "dest": "server.ts"
     }
   ]
 }
