@@ -1,6 +1,9 @@
 
 import { join } from 'path';
 import fs from 'fs';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 const isVercel = !!process.env.VERCEL;
 
@@ -12,6 +15,84 @@ const LOCK_FILE = isVercel ? join('/tmp', 'db.json.lock') : join(process.cwd(), 
 if (!isVercel && !fs.existsSync(join(process.cwd(), 'data'))) {
     fs.mkdirSync(join(process.cwd(), 'data'), { recursive: true });
 }
+
+let pool: any = null;
+if (process.env.DATABASE_URL) {
+    try {
+        pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: {
+                rejectUnauthorized: false
+            }
+        });
+        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully.");
+    } catch (poolErr) {
+        console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
+    }
+}
+
+let isDbSynced = false;
+
+// Cloud Database Initialization and Synchronization Loader
+export const initAndSyncDatabase = async () => {
+    if (isDbSynced) return;
+    if (!pool) {
+        console.log("No cloud DATABASE_URL is configured. Operating purely in local JSON storage file mode.");
+        isDbSynced = true;
+        return;
+    }
+
+    try {
+        console.log("Synchronizing active DB snapshot with remote PostgreSQL cloud storage...");
+        // Ensure table exists
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS yeedem_db (
+                key VARCHAR(50) PRIMARY KEY,
+                data JSONB,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Check if active_db row exists
+        const res = await pool.query(`SELECT data FROM yeedem_db WHERE key = 'active_db'`);
+        if (res.rows.length > 0) {
+            const dbData = res.rows[0].data;
+            if (dbData && typeof dbData === 'object') {
+                fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2), 'utf-8');
+                console.log("Successfully synchronized active DB from remote cloud PostgreSQL.");
+            }
+        } else {
+            // First run: Seed cloud PostgreSQL from existing local DB
+            const content = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH, 'utf-8') : '';
+            let currentData;
+            try {
+                currentData = content ? JSON.parse(content) : null;
+            } catch (e) {
+                currentData = null;
+            }
+            if (!currentData) {
+                currentData = {
+                    anonymousTrialTrackers: [],
+                    users: [],
+                    merchantSessions: [],
+                    staffActivityLogs: [],
+                    staff: []
+                };
+            }
+            await pool.query(
+                `INSERT INTO yeedem_db (key, data) VALUES ('active_db', $1) ON CONFLICT (key) DO UPDATE SET data = $1`,
+                [JSON.stringify(currentData)]
+            );
+            fs.writeFileSync(DB_PATH, JSON.stringify(currentData, null, 2), 'utf-8');
+            console.log("Successfully seeded brand-new remote cloud PostgreSQL records.");
+        }
+        isDbSynced = true;
+    } catch (err) {
+        console.error("Failed to sync database from cloud PostgreSQL, using local fallback filesystem state:", err);
+        // Force true to avoid blocking startup requests if cloud db suffers a transient error
+        isDbSynced = true;
+    }
+};
 
 // Ensure database file exists
 const initializeDB = () => {
@@ -112,6 +193,18 @@ export const writeDB = (data: any) => {
     try {
         fs.writeFileSync(LOCK_FILE, 'locked');
         fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+        
+        // Asynchronously backup changes to cloud PostgreSQL storage if configured
+        if (pool) {
+            pool.query(
+                `INSERT INTO yeedem_db (key, data, updated_at) 
+                 VALUES ('active_db', $1, NOW()) 
+                 ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
+                [JSON.stringify(data)]
+            ).catch((err: any) => {
+                console.error("Remote cloud PostgreSQL replication update mismatch:", err);
+            });
+        }
     } catch (err) {
         console.error("Failed to write to JSON db:", err);
     } finally {

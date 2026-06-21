@@ -23,7 +23,7 @@ import InvoiceTheme from './components/InvoiceTheme';
 import InvoiceTemplateSettings from './components/InvoiceTemplateSettings';
 import BackupManager from './components/BackupManager';
 import PWAInstallHelper from './components/PWAInstallHelper';
-import DjangoAdminController from './components/DjangoAdminController';
+import SystemAdminController from './components/SystemAdminController';
 import OnboardingSummary from './components/OnboardingSummary';
 import PricingGrid from './components/PricingGrid';
 import CloseAccountCard from './components/CloseAccountCard';
@@ -229,7 +229,7 @@ export default function App() {
             console.error("Non-fatal: Failed to parse validate-session JSON content:", jsonErr);
           }
         } catch (err: any) {
-          if (err.message === 'Django API returned 401') {
+          if (err.message === 'System API returned 401') {
             localStorage.removeItem('session_id');
             localStorage.removeItem('active_screen');
             setUserState(prev => ({ ...prev, authenticated: false, onboarded: false }));
@@ -3014,7 +3014,7 @@ export default function App() {
       {/* Spacer offset for the fixed headers */}
       <div className={`transition-all duration-300 print:hidden ${(activeScreen === 'invoice_preview' && !userState.authenticated) || activeScreen === 'terminal' ? 'h-0' : (isScrolled ? (userState.authenticated ? 'h-24' : 'h-16') : (userState.authenticated ? 'h-28' : 'h-20'))}`}></div>
 
-      {/* Primary Deep Navy (#0E1338) mobile drawer with core Django view URL patterns */}
+      {/* Primary Deep Navy (#0E1338) mobile drawer with system view URL patterns */}
       {isSideMenuOpen && (
         <div className="fixed inset-0 z-[100] flex justify-end">
           <div 
@@ -4381,7 +4381,7 @@ export default function App() {
               onInstall={handleInstallPWA}
             />
 
-            {/* Django Admin Control Console & Settings Choice Tab bar */}
+            {/* System Admin Control Console & Settings Choice Tab bar */}
             <div className="flex border-b border-gray-200/40 gap-5 pb-1 mt-4">
               <button
                 onClick={() => setProfileTab('control_desk')}
@@ -4399,7 +4399,7 @@ export default function App() {
 
             {profileTab === 'control_desk' && (
               <div className="animate-fadeIn">
-                <DjangoAdminController
+                <SystemAdminController
                   customers={customers}
                   products={products}
                   restockLogs={restockLogs}

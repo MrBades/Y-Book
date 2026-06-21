@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { formatNaira } from '../utils/currency';
 import { 
   Shield, 
@@ -8,24 +8,19 @@ import {
   Database, 
   Trash2, 
   CheckCircle, 
-  AlertTriangle, 
   RefreshCw, 
   Radio, 
   Flame, 
-  Compass, 
-  Lock, 
   Unlock, 
   Tag, 
   Plus, 
   DollarSign, 
-  TrendingUp, 
   Activity, 
-  UserCheck,
-  Globe
+  UserCheck
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
-interface DjangoAdminControllerProps {
+interface SystemAdminControllerProps {
   customers: any[];
   products: any[];
   restockLogs: any[];
@@ -42,14 +37,14 @@ interface AuditLog {
   message: string;
 }
 
-export default function DjangoAdminController({
+export default function SystemAdminController({
   customers,
   products,
   restockLogs,
   onUpdateCustomers,
   onUpdateProducts,
   userEmail
-}: DjangoAdminControllerProps) {
+}: SystemAdminControllerProps) {
   // Telemetry Metrics
   const totalOutstandingDebt = customers.reduce((sum, c) => sum + (Number(c.activeDebtBalance) || 0), 0);
   const totalProductsCount = products.length;
@@ -58,31 +53,8 @@ export default function DjangoAdminController({
   // Custom Controls Input States
   const [priceAdjustmentPercent, setPriceAdjustmentPercent] = useState<number>(10);
   const [targetMinStock, setTargetMinStock] = useState<number>(25);
-  const [simulatedRegion, setSimulatedRegion] = useState<string>('NG-Lagos');
-  const [deviceFpMock, setDeviceFpMock] = useState<string>('fp_default_owner');
-  const [isLockoutTriggered, setIsLockoutTriggered] = useState(false);
-  const [telemetryRefreshes, setTelemetryRefreshes] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const [copiedToken, setCopiedToken] = useState(false);
-
-  const webhookUrl = typeof window !== 'undefined' 
-    ? `${window.location.origin}/api/auth/whatsapp-webhook` 
-    : 'https://yeedem.alwaysdata.net/api/auth/whatsapp-webhook';
-
-  const verifyTokenVal = "yeedem_verification_token";
-
-  const handleCopyUrl = () => {
-    navigator.clipboard.writeText(webhookUrl);
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
-  };
-
-  const handleCopyToken = () => {
-    navigator.clipboard.writeText(verifyTokenVal);
-    setCopiedToken(true);
-    setTimeout(() => setCopiedToken(false), 2000);
-  };
+  const [telemetryRefreshes, setTelemetryRefreshes] = useState<number>(0);
   
   // Audit logs state
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([
@@ -91,7 +63,7 @@ export default function DjangoAdminController({
       timestamp: new Date().toLocaleTimeString(),
       type: 'INFO',
       code: 'SYS_BOOT',
-      message: 'Django administrative control engine synchronized with active local ledger.'
+      message: 'System administrative control engine synchronized with active local ledger.'
     }
   ]);
 
@@ -113,7 +85,7 @@ export default function DjangoAdminController({
       setIsSyncing(false);
       setTelemetryRefreshes(p => p + 1);
       addAuditLog('SUCCESS', 'DB_REFRESH', 'Re-parsed database records and compiled fresh telemetry reports.');
-    }, 6000);
+    }, 1500);
   };
 
   // Control action 1: Bulk adjust prices
@@ -180,7 +152,6 @@ export default function DjangoAdminController({
     try {
       const res = await apiFetch('/api/admin/unlock-all');
       if (res.ok) {
-        const payload = await res.json();
         addAuditLog('SUCCESS', 'SERVER_UNLOCK', 'Command accepted. Remotely bypassed and unlocked all suspicious login states.');
         alert("🎉 Success! All developer/clerk login sessions have been successfully unlocked on the Express server.");
       } else {
@@ -194,20 +165,10 @@ export default function DjangoAdminController({
     }
   };
 
-  // Mock a security lockout
-  const handleLockoutSelfSimulate = () => {
-    setIsLockoutTriggered(!isLockoutTriggered);
-    if (!isLockoutTriggered) {
-      addAuditLog('CRITICAL', 'ANOMALY_LOCK', `Mismatched fingerprinted device '${deviceFpMock}' flagged at coordinates relative to '${simulatedRegion}'. Session locked.`);
-    } else {
-      addAuditLog('INFO', 'ANOMALY_CLEARED', `Administrative master keys re-verified. Security lock resolved.`);
-    }
-  };
-
   return (
-    <div id="django-admin-profile-container" className="bg-[#0b0c15] text-slate-100 rounded-[24px] border border-blue-500/20 shadow-2xl shadow-blue-950/20 overflow-hidden transition-all duration-300">
+    <div id="system-admin-profile-container" className="bg-[#0b0c15] text-slate-100 rounded-[24px] border border-blue-500/20 shadow-2xl shadow-blue-950/20 overflow-hidden transition-all duration-300">
       
-      {/* Django Admin Header Shield */}
+      {/* System Admin Header Shield */}
       <div className="bg-gradient-to-r from-[#0d162d] to-[#040813] border-b border-blue-500/10 p-5 md:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#00A6FF] to-[#0142ff] flex items-center justify-center text-white font-extrabold shadow-lg shadow-blue-500/15">

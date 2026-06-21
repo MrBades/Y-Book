@@ -5,7 +5,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import Paystack from 'paystack';
 import { anomalyDetectionMiddleware, requireSession, getApproxRegion } from "./server/middleware.js";
-import { readDB, writeDB } from "./server/db.js";
+import { readDB, writeDB, initAndSyncDatabase } from "./server/db.js";
 
 dotenv.config();
 
@@ -77,6 +77,16 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-session-id, x-device-fingerprint, x-approx-region');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
+    }
+    next();
+});
+
+// Auto-synchronize local cached DB state with external PostgreSQL cloud storage under serverless/Vercel environments
+app.use(async (req, res, next) => {
+    try {
+        await initAndSyncDatabase();
+    } catch (err) {
+        console.error("Cloud database synchronization warning:", err);
     }
     next();
 });
@@ -1454,6 +1464,10 @@ app.post("/api/auth/pin-login", (req, res) => {
         return res.status(404).json({ error: "Merchant profile not found on this device." });
     }
     
+    if (user.subscriptionStatus === "suspended") {
+        return res.status(403).json({ error: "Your account has been manually suspended by system administrators. Please contact operations support." });
+    }
+    
     if (user.owner_pin !== pin) {
         return res.status(401).json({ error: "Incorrect 4-digit security PIN." });
     }
@@ -1976,6 +1990,1175 @@ app.get("/api/admin/unlock-all", (req, res) => {
     db.merchantSessions.forEach((s: any) => s.is_suspicious_locked = false);
     writeDB(db);
     res.json({ status: "success", message: "All sessions unlocked." });
+});
+
+// System Admin Middleware
+const requireSystemAdmin = (req: any, res: any, next: any) => {
+    const adminPassword = req.headers['x-admin-password'] || req.query.admin_password;
+    const expectedPassword = process.env.ADMIN_PASSWORD || 'yeedem_admin_cpanel_2026';
+    if (!adminPassword || adminPassword !== expectedPassword) {
+        return res.status(401).json({ error: "Unauthorized: Invalid System Admin Password" });
+    }
+    next();
+};
+
+// Admin UI Page
+app.get(['/admin', '/admin-cpanel'], (req, res) => {
+    const defaultPassword = process.env.ADMIN_PASSWORD || 'yeedem_admin_cpanel_2026';
+    res.status(200).set({ 'Content-Type': 'text/html' }).send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yeedem Books | Owner Admin cPanel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #080914;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col">
+    <!-- Login Screen -->
+    <div id="login-container" class="flex-1 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-[#111329] border border-blue-500/20 rounded-[28px] p-8 shadow-2xl shadow-blue-950/40 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
+            <div class="absolute bottom-0 left-0 w-32 h-32 bg-[#00A6FF]/5 rounded-full blur-2xl"></div>
+            
+            <div class="text-center mb-8 relative">
+                <div class="w-16 h-16 bg-[#00A6FF]/10 text-[#00A6FF] rounded-2xl flex items-center justify-center mx-auto mb-4 border border-[#00A6FF]/20 shadow-lg shadow-[#00A6FF]/10">
+                    <i data-lucide="shield-check" class="w-8 h-8"></i>
+                </div>
+                <h1 class="text-2xl font-black tracking-tight text-white">Yeedem Books</h1>
+                <p class="text-sm text-gray-400 mt-1">Owner Administration Console</p>
+            </div>
+            
+            <form id="login-form" class="space-y-5 relative">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Access Token / Password</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400 pointer-events-none">
+                            <i data-lucide="lock" class="w-4 h-4"></i>
+                        </span>
+                        <input type="password" id="admin-password-input" required placeholder="Enter administrative key"
+                            class="w-full pl-10 pr-4 py-3.5 bg-[#0b0c15] border border-gray-800 rounded-xl text-white placeholder-gray-500 hover:border-blue-500/30 focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] transition-all outline-none text-center tracking-widest font-bold">
+                    </div>
+                    <p class="text-[11px] text-gray-500 mt-2 text-center">
+                        Defaults to <code class="bg-[#0b0c15] px-1.5 py-0.5 rounded text-blue-400 font-mono text-[10px]">${defaultPassword}</code> if not overridden in platform secrets.
+                    </p>
+                </div>
+                
+                <button type="submit" id="login-btn"
+                    class="w-full py-3.5 bg-gradient-to-r from-blue-600 to-[#00A6FF] hover:opacity-90 active:scale-[0.98] text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2">
+                    Authenticate Session
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+                <div id="login-error" class="text-red-400 text-xs text-center hidden font-medium"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- main Dashboard Application Container -->
+    <div id="dashboard-container" class="hidden flex-1 flex flex-col">
+        <!-- Navigation Header -->
+        <header class="bg-[#111329] border-b border-blue-500/10 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-[#00A6FF]/10 text-[#00A6FF] rounded-xl flex items-center justify-center border border-[#00A6FF]/20">
+                    <i data-lucide="database" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black tracking-tight text-white">Yeedem System Admin</h1>
+                    <span class="text-[10px] text-[#00A6FF] font-bold tracking-widest uppercase">Platform Control Deck</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <button onclick="triggerUnlockAll()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/20">
+                    <i data-lucide="unlock" class="w-3.5 h-3.5"></i>
+                    Bypass All Locked Sessions
+                </button>
+                <button onclick="logoutAdmin()" class="p-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded-lg transition-all" title="Logout Panel">
+                    <i data-lucide="log-out" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Metric Cards -->
+        <section class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-5 relative overflow-hidden">
+                <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Registered Merchants</div>
+                <div id="stat-total-users" class="text-3xl font-black mt-2 text-white mono">0</div>
+                <div class="absolute right-4 bottom-4 text-blue-500/10">
+                    <i data-lucide="users" class="w-12 h-12"></i>
+                </div>
+            </div>
+            <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-5 relative overflow-hidden">
+                <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Active Device Sessions</div>
+                <div id="stat-total-sessions" class="text-3xl font-black mt-2 text-emerald-400 mono">0</div>
+                <div class="absolute right-4 bottom-4 text-emerald-500/10">
+                    <i data-lucide="smartphone" class="w-12 h-12"></i>
+                </div>
+            </div>
+            <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-5 relative overflow-hidden">
+                <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Registered Terminal Staff</div>
+                <div id="stat-total-staff" class="text-3xl font-black mt-2 text--[#00A6FF] mono">0</div>
+                <div class="absolute right-4 bottom-4 text-[#00A6FF]/10">
+                    <i data-lucide="user-check" class="w-12 h-12"></i>
+                </div>
+            </div>
+            <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-5 relative overflow-hidden">
+                <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Free Trial Trackers</div>
+                <div id="stat-total-trials" class="text-3xl font-black mt-2 text-amber-500 mono">0</div>
+                <div class="absolute right-4 bottom-4 text-amber-500/10">
+                    <i data-lucide="gift" class="w-12 h-12"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Workspace Tabs -->
+        <div class="px-6 border-b border-blue-500/10 flex gap-2">
+            <button onclick="setTab('merchants')" id="tab-merchants" class="px-5 py-3 text-xs font-extrabold border-b-2 border-[#00A6FF] text-[#00A6FF] transition-all flex items-center gap-2">
+                <i data-lucide="users" class="w-3.5 h-3.5"></i> Merchants Catalog
+            </button>
+            <button onclick="setTab('sessions')" id="tab-sessions" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+                <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Active Sessions
+            </button>
+            <button onclick="setTab('trials')" id="tab-trials" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+                <i data-lucide="gift" class="w-3.5 h-3.5"></i> Trial Codes
+            </button>
+            <button onclick="setTab('rawdb')" id="tab-rawdb" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+                <i data-lucide="file-json" class="w-3.5 h-3.5"></i> raw db.json
+            </button>
+        </div>
+
+        <!-- Tab Content Viewport -->
+        <main class="flex-1 p-6 relative overflow-hidden">
+            <!-- Merchants Tab -->
+            <div id="view-merchants" class="space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-4 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <div class="relative flex-1 max-w-md">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                        </span>
+                        <input type="text" id="merchant-search" oninput="renderMerchants()" placeholder="Search merchants by name, user id, contact details..."
+                            class="w-full pl-9 pr-4 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white placeholder-gray-500 focus:border-[#00A6FF] outline-none text-xs">
+                    </div>
+                    <button onclick="openCreateUserModal()" class="px-4 py-2.5 bg-[#00A6FF] hover:bg-[#0070f3] text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg shadow-blue-500/10 transition-all">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i> Create Manual Merchant
+                    </button>
+                </div>
+
+                <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                    <th class="py-4 px-5">ID / Contact Email</th>
+                                    <th class="py-4 px-5">Merchant Name</th>
+                                    <th class="py-4 px-5">Business Name & Shop Slug</th>
+                                    <th class="py-4 px-5">Master PIN</th>
+                                    <th class="py-4 px-5">Plan & Service Tier</th>
+                                    <th class="py-4 px-5 text-right">Administrative Options</th>
+                                </tr>
+                            </thead>
+                            <tbody id="merchants-table-body" class="divide-y divide-gray-800/50 text-xs">
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sessions Tab -->
+            <div id="view-sessions" class="space-y-4 hidden">
+                <div class="flex items-center justify-between bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <h2 class="text-sm font-black text-white flex items-center gap-2">
+                        <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i>
+                        System Authorized Credentials Table
+                    </h2>
+                    <span id="sessions-count-badge" class="px-2.5 py-1 bg-emerald-950 text-emerald-400 rounded-full text-[10px] font-bold border border-emerald-900/30">0 ACTIVE</span>
+                </div>
+
+                <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                    <th class="py-4 px-5">User ID Target</th>
+                                    <th class="py-4 px-5">OAuth / Web Session ID</th>
+                                    <th class="py-4 px-5">IP & Active Region</th>
+                                    <th class="py-4 px-5">Lock Status</th>
+                                    <th class="py-4 px-5 text-right">Revocation</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sessions-table-body" class="divide-y divide-gray-800/50 text-xs">
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trials Tab -->
+            <div id="view-trials" class="space-y-4 hidden">
+                <div class="flex items-center justify-between bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <h2 class="text-sm font-black text-white flex items-center gap-2">
+                        <i data-lucide="gift" class="w-4 h-4 text-amber-500"></i>
+                        Anonymous IP Address Device Trial Limits
+                    </h2>
+                    <button onclick="clearAllTrials()" class="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg text-xs font-bold transition-all border border-amber-500/20">
+                        Purge All Trackers
+                    </button>
+                </div>
+
+                <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                    <th class="py-4 px-5">Device Fingerprint Hash</th>
+                                    <th class="py-4 px-5">IP Location</th>
+                                    <th class="py-4 px-5">Generated Invoices</th>
+                                    <th class="py-4 px-5">Last Activity Time</th>
+                                    <th class="py-4 px-5 text-right">Admin</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trials-table-body" class="divide-y divide-gray-800/50 text-xs">
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- raw db.json Tab -->
+            <div id="view-rawdb" class="space-y-4 hidden h-full flex flex-col">
+                <div class="flex flex-wrap items-center justify-between gap-3 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <div>
+                        <h2 class="text-sm font-black text-white">Direct DB State Manipulation (db.json)</h2>
+                        <p class="text-[11px] text-gray-400 mt-0.5">Use with caution. Modifying keys directly can affect backend validation routers.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="downloadBackup()" class="px-3.5 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            Export JSON File
+                        </button>
+                        <button onclick="triggerRawSave()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5">
+                            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+                            Save JSON Overlay
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex-1 bg-[#0b0c15] border border-blue-500/10 rounded-2xl overflow-hidden flex flex-col p-4 shadow-2xl mini-scrollbar font-mono text-xs">
+                    <textarea id="raw-db-textarea" class="w-full flex-1 bg-transparent text-emerald-400 border-none outline-none resize-none animate-none" style="min-height: 480px;"></textarea>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Manual User Modal -->
+    <div id="create-user-modal" class="fixed inset-0 bg-[#040409]/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative">
+            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between">
+                <h3 class="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <i data-lucide="user-plus" class="text-[#00A6FF]"></i> Check-In New Merchant
+                </h3>
+                <button onclick="closeCreateUserModal()" class="text-gray-400 hover:text-white transition-all">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <form id="create-user-form" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Login Email / Phone Number Code</label>
+                    <input type="text" id="create-phone-or-email" required placeholder="User identifier (e.g. merchant@mail.com)"
+                        class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Merchant Display Name</label>
+                    <input type="text" id="create-full-name" placeholder="Full name of merchant"
+                        class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Business Title</label>
+                        <input type="text" id="create-business-name" placeholder="Brand, Company"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Default PIN Code</label>
+                        <input type="text" id="create-owner-pin" placeholder="e.g. 1234" maxLength="4" defaultValue="1234"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none tracking-widest font-bold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Plan tier</label>
+                        <select id="create-sub-plan" class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs focus:border-[#00A6FF] outline-none">
+                            <option value="SME Basic">SME Basic</option>
+                            <option value="SME Premium">SME Premium</option>
+                            <option value="SME Pro">SME Pro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Plan status</label>
+                        <select id="create-sub-status" class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs focus:border-[#00A6FF] outline-none">
+                            <option value="active">Active</option>
+                            <option value="suspended">Suspended</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-[#00A6FF] text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5">
+                    <i data-lucide="check" class="w-4 h-4"></i> Complete Registration
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="edit-user-modal" class="fixed inset-0 bg-[#040409]/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative">
+            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between">
+                <h3 class="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    <i data-lucide="edit-3" class="text-[#00A6FF]"></i> Modify Merchant Specifications
+                </h3>
+                <button onclick="closeEditUserModal()" class="text-gray-400 hover:text-white transition-all">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <form id="edit-user-form" class="p-6 space-y-4">
+                <input type="hidden" id="edit-user-id">
+                <div>
+                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Login Email / Phone Number Code</label>
+                    <input type="text" id="edit-phone-or-email" readonly
+                        class="w-full px-3.5 py-2.5 bg-[#0b0c15] text-gray-500 border border-gray-800 rounded-lg text-xs outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Merchant Display Name</label>
+                    <input type="text" id="edit-full-name" placeholder="Full name of merchant"
+                        class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Business Title</label>
+                        <input type="text" id="edit-business-name" placeholder="Brand, Company"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">PIN Authorization Key</label>
+                        <input type="text" id="edit-owner-pin" placeholder="PIN" maxLength="6"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none tracking-widest font-bold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Plan selection</label>
+                        <select id="edit-sub-plan" class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs focus:border-[#00A6FF] outline-none">
+                            <option value="SME Basic">SME Basic</option>
+                            <option value="SME Premium">SME Premium</option>
+                            <option value="SME Pro">SME Pro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Plan status</label>
+                        <select id="edit-sub-status" class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs focus:border-[#00A6FF] outline-none">
+                            <option value="active">Active</option>
+                            <option value="suspended">Suspended</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                     <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Shop Slug</label>
+                        <input type="text" id="edit-shop-slug" placeholder="e.g. bobs-store"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                    </div>
+                     <div>
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Trial counts used</label>
+                        <input type="number" id="edit-trial-count" min="0" max="10"
+                            class="w-full px-3.5 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                    </div>
+                </div>
+                
+                <button type="submit" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5">
+                    <i data-lucide="save" class="w-4 h-4"></i> Apply Specification Updates
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Script Application Logic -->
+    <script>
+        let adminPassword = localStorage.getItem('system_admin_password_token') || '';
+        let systemData = null;
+        let activeTab = 'merchants';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (adminPassword) {
+                document.getElementById('admin-password-input').value = adminPassword;
+                attemptLogin(adminPassword);
+            } else {
+                lucide.createIcons();
+            }
+        });
+
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pass = document.getElementById('admin-password-input').value.trim();
+            attemptLogin(pass);
+        });
+
+        async function attemptLogin(password) {
+            const errDiv = document.getElementById('login-error');
+            const submitBtn = document.getElementById('login-btn');
+            
+            errDiv.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = 'Securing Handshake...';
+
+            try {
+                const res = await fetch('/api/system-admin/db', {
+                    headers: { 'x-admin-password': password }
+                });
+
+                if (!res.ok) {
+                    throw new Error('Verification link rejected. Access token invalid.');
+                }
+
+                systemData = await res.json();
+                adminPassword = password;
+                localStorage.setItem('system_admin_password_token', adminPassword);
+                
+                // Transition displays
+                document.getElementById('login-container').classList.add('hidden');
+                document.getElementById('dashboard-container').classList.remove('hidden');
+                
+                document.body.classList.remove('flex', 'items-center', 'justify-center');
+                
+                refreshStatCards();
+                setTab(activeTab);
+            } catch (err) {
+                errDiv.textContent = err.message || 'System error. Handshake timed out.';
+                errDiv.classList.remove('hidden');
+                localStorage.removeItem('system_admin_password_token');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Authenticate Session <i data-lucide="arrow-right" class="w-4 h-4 inline ml-1"></i>';
+                lucide.createIcons();
+            }
+        }
+
+        function logoutAdmin() {
+            localStorage.removeItem('system_admin_password_token');
+            window.location.reload();
+        }
+
+        function refreshStatCards() {
+            if (!systemData) return;
+            document.getElementById('stat-total-users').textContent = (systemData.users || []).length;
+            document.getElementById('stat-total-sessions').textContent = (systemData.merchantSessions || []).length;
+            document.getElementById('stat-total-staff').textContent = (systemData.staff || []).length;
+            document.getElementById('stat-total-trials').textContent = (systemData.anonymousTrialTrackers || []).length;
+            document.getElementById('sessions-count-badge').textContent = \`\${(systemData.merchantSessions || []).length} STABLE CLIENTS\`;
+        }
+
+        function setTab(tab) {
+            activeTab = tab;
+            
+            // Toggle highlight tabs
+            ['merchants', 'sessions', 'trials', 'rawdb'].forEach(t => {
+                const el = document.getElementById(\`tab-\${t}\`);
+                const viewEl = document.getElementById(\`view-\${t}\`);
+                
+                if (t === tab) {
+                    el.className = 'px-5 py-3 text-xs font-extrabold border-b-2 border-[#00A6FF] text-[#00A6FF] transition-all flex items-center gap-2';
+                    viewEl.classList.remove('hidden');
+                } else {
+                    el.className = 'px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2';
+                    viewEl.classList.add('hidden');
+                }
+            });
+
+            if (tab === 'merchants') renderMerchants();
+            else if (tab === 'sessions') renderSessions();
+            else if (tab === 'trials') renderTrials();
+            else if (tab === 'rawdb') loadRawDbEditor();
+
+            lucide.createIcons();
+        }
+
+        async function fetchFreshDB() {
+            try {
+                const res = await fetch('/api/system-admin/db', {
+                    headers: { 'x-admin-password': adminPassword }
+                });
+                if (res.ok) {
+                    systemData = await res.json();
+                    refreshStatCards();
+                    return true;
+                }
+            } catch (e) {
+                console.error('Failed fetching refreshed system catalog state:', e);
+            }
+            return false;
+        }
+
+        function renderMerchants() {
+            const search = document.getElementById('merchant-search').value.toLowerCase().trim();
+            const body = document.getElementById('merchants-table-body');
+            body.innerHTML = '';
+
+            const filtered = (systemData.users || []).filter(u => {
+                const matchId = String(u.id || '').toLowerCase().includes(search);
+                const matchEmail = String(u.phone_or_email || '').toLowerCase().includes(search);
+                const matchName = String(u.full_name || '').toLowerCase().includes(search);
+                const matchBusName = String(u.business_name || '').toLowerCase().includes(search);
+                const matchSlug = String(u.shop_slug || '').toLowerCase().includes(search);
+                return matchId || matchEmail || matchName || matchBusName || matchSlug;
+            });
+
+            if (filtered.length === 0) {
+                body.innerHTML = \`
+                    <tr>
+                        <td colspan="6" class="text-center py-12 text-gray-500 font-medium">
+                            <i data-lucide="users" class="w-8 h-8 mx-auto mb-2 text-gray-650 block"></i>
+                            No merchant registers matched search parameters
+                        </td>
+                    </tr>
+                \`;
+                lucide.createIcons();
+                return;
+            }
+
+            filtered.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-blue-500/5 transition-colors border-b border-gray-800/20';
+                
+                const plan = u.subscriptionPlan || 'SME Basic';
+                const status = u.subscriptionStatus || 'active';
+                const badgeColor = status === 'active' ? 'bg-emerald-950 text-emerald-400 border-emerald-900/30' : 'bg-red-950 text-red-400 border-red-900/30';
+                const planColor = plan.includes('Premium') ? 'bg-purple-950 text-purple-400 border-purple-900/30' : (plan.includes('Pro') ? 'bg-amber-950 text-amber-400 border-amber-900/30' : 'bg-blue-950 text-[#00A6FF] border-blue-900/30');
+
+                tr.innerHTML = \`
+                    <td class="py-4 px-5 font-semibold text-white">
+                        <div class="font-mono text-xs max-w-[140px] truncate" title="\this.id}">ID: \${u.id}</div>
+                        <div class="text-gray-400 font-medium text-[11px] mt-0.5">\${u.phone_or_email}</div>
+                    </td>
+                    <td class="py-4 px-4 text-gray-300 font-bold">\${u.full_name || '—'}</td>
+                    <td class="py-4 px-5">
+                        <div class="text-white font-extrabold">\${u.business_name || 'Personal Account'}</div>
+                        <div class="text-[10px] text-gray-500 font-mono mt-1">\${u.shop_slug ? \`shop/\${u.shop_slug}\` : 'no-subdomain'}</div>
+                    </td>
+                    <td class="py-4 px-5 mono font-extrabold tracking-widest text-[#00A6FF]">\${u.owner_pin || '1234'}</td>
+                    <td class="py-4 px-5">
+                        <div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border \${planColor}">\${plan}</div>
+                        <div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border \${badgeColor} ml-1.5 capitalize">\${status}</div>
+                    </td>
+                    <td class="py-4 px-5 text-right space-x-1.5 whitespace-nowrap">
+                        <button onclick="openEditUserModal('\${u.id}')" class="p-1 px-2.5 bg-blue-950/40 hover:bg-blue-900/40 text-blue-400 border border-blue-950 rounded text-[11px] font-bold transition-all inline-flex items-center gap-1">
+                            <i data-lucide="edit-3" class="w-3 h-3"></i> Modify
+                        </button>
+                        <button onclick="deleteUser('\${u.id}', '\${u.phone_or_email}')" class="p-1 px-2.5 bg-red-950/40 hover:bg-red-900/50 text-red-400 border border-red-950 rounded text-[11px] font-bold transition-all inline-flex items-center gap-1">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i> Purge
+                        </button>
+                    </td>
+                \`;
+                body.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function renderSessions() {
+            const body = document.getElementById('sessions-table-body');
+            body.innerHTML = '';
+            const list = systemData.merchantSessions || [];
+
+            if (list.length === 0) {
+                body.innerHTML = \`
+                    <tr>
+                        <td colspan="5" class="text-center py-12 text-gray-500 font-medium">
+                            <i data-lucide="smartphone" class="w-8 h-8 mx-auto mb-2 text-gray-650 block"></i>
+                            No sessions active inside the central router.
+                        </td>
+                    </tr>
+                \`;
+                lucide.createIcons();
+                return;
+            }
+
+            list.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-blue-500/5 transition-colors border-b border-gray-800/20';
+                
+                const lockedState = s.is_suspicious_locked;
+                const statusBadge = lockedState 
+                    ? '<span class="px-2 py-0.5 rounded-full bg-rose-950 border border-rose-950 text-rose-400 font-semibold text-[10px] uppercase">🔒 LOCKOUT</span>'
+                    : '<span class="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-950 text-emerald-400 font-semibold text-[10px] uppercase">● ACTIVE</span>';
+
+                tr.innerHTML = \`
+                    <td class="py-4 px-5 font-semibold text-white">
+                        <div class="font-mono text-xs truncate max-w-[140px]" title="\${s.user_id}">\${s.user_id}</div>
+                    </td>
+                    <td class="py-4 px-5">
+                        <div class="font-mono text-gray-400 max-w-[180px] truncate" title="\s.session_id}">\${s.session_id}</div>
+                    </td>
+                    <td class="py-4 px-5 text-gray-300">
+                        <div class="mono text-xs font-bold">\s.last_active_ip || '127.0.0.1'}\${s.last_active_ip || '127.0.0.1'}</div>
+                        <div class="text-[10px] text-gray-500 mt-0.5">\n                            <i data-lucide="map-pin" class="w-3 h-3 inline mr-0.5"></i>\n                            \${s.last_active_region || 'Unknown'}\n                        </div>
+                    </td>
+                    <td class="py-4 px-5">\${statusBadge}</td>
+                    <td class="py-4 px-5 text-right whitespace-nowrap">
+                        \${lockedState ? \`
+                            <button onclick="unlockSession('\${s.session_id}')" class="p-1 px-2.5 bg-emerald-950/40 hover:bg-emerald-900/40 text-emerald-400 border border-emerald-950 rounded text-[11px] font-bold transition-all mr-2">
+                                <i data-lucide="unlock" class="w-3 h-3 inline mr-1"></i> Unlock
+                            </button>
+                        \` : ''}
+                        <button onclick="revokeSession('\${s.session_id}')" class="p-1 px-2.5 bg-rose-950/40 hover:bg-rose-900/40 text-rose-400 border border-rose-950 rounded text-[11px] font-bold transition-all">
+                            <i data-lucide="shield-alert" class="w-3 h-3 inline mr-1"></i> Kill
+                        </button>
+                    </td>
+                \`;
+                body.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function renderTrials() {
+            const body = document.getElementById('trials-table-body');
+            body.innerHTML = '';
+            const list = systemData.anonymousTrialTrackers || [];
+
+            if (list.length === 0) {
+                body.innerHTML = \`
+                    <tr>
+                        <td colspan="5" class="text-center py-12 text-gray-500 font-medium">
+                            <i data-lucide="gift" class="w-8 h-8 mx-auto mb-2 text-gray-650 block"></i>
+                            No standalone device trial sessions logged.
+                        </td>
+                    </tr>
+                \`;
+                lucide.createIcons();
+                return;
+            }
+
+            list.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-blue-500/5 transition-colors border-b border-gray-800/20';
+                
+                const formattedTime = new Date(t.last_request_timestamp || Date.now()).toLocaleTimeString();
+
+                tr.innerHTML = \`
+                    <td class="py-4 px-5">
+                        <div class="mono text-xs max-w-[200px] truncate" title="\${t.device_fingerprint_hash}">\${t.device_fingerprint_hash}</div>
+                    </td>
+                    <td class="py-4 px-5 text-gray-300 font-bold">\${t.ip_address || '127.0.0.1'}</td>
+                    <td class="py-4 px-5 font-bold">
+                        <span class="px-2 py-0.5 rounded bg-blue-950 text-[#00A6FF] mono font-bold">\${t.invoice_count}/2</span>
+                    </td>
+                    <td class="py-4 px-5 text-gray-400 mono text-[11px]">\${formattedTime}</td>
+                    <td class="py-4 px-5 text-right">
+                        <button onclick="resetTrial('\${t.device_fingerprint_hash}')" class="p-1 px-2.5 bg-amber-950/40 hover:bg-amber-900/40 text-amber-400 border border-amber-950 rounded text-[11px] font-bold transition-all">
+                            <i data-lucide="refresh-cw" class="w-3 h-3 inline mr-1"></i> Reset Limit
+                        </button>
+                    </td>
+                \`;
+                body.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        function loadRawDbEditor() {
+            document.getElementById('raw-db-textarea').value = JSON.stringify(systemData, null, 2);
+        }
+
+        async function triggerRawSave() {
+            if (!window.confirm('⚠️ WARNING: Directly overwriting system db.json could lead to session verification or login failures. Do you wish to override anyway?')) {
+                return;
+            }
+
+            const rawVal = document.getElementById('raw-db-textarea').value;
+            let parsed = null;
+            try {
+                parsed = JSON.parse(rawVal);
+            } catch (err) {
+                alert('Parsing failed! Please ensure the JSON is correctly formatted before saving: ' + err.message);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/system-admin/db', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify(parsed)
+                });
+
+                if (res.ok) {
+                    alert('🎉 System database state successfully serialized!');
+                    await fetchFreshDB();
+                    setTab('merchants');
+                } else {
+                    const data = await res.json();
+                    alert('Error: ' + (data.error || 'Serialization aborted.'));
+                }
+            } catch (e) {
+                alert('Network connection error matching system write request.');
+            }
+        }
+
+        function downloadBackup() {
+            const blob = new Blob([JSON.stringify(systemData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = \`yeedem_db_backup_\${Math.floor(Date.now()/1000)}.json\`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        async function triggerUnlockAll() {
+            try {
+                const res = await fetch('/api/system-admin/unlock-all', {
+                    method: 'POST',
+                    headers: { 'x-admin-password': adminPassword }
+                });
+                if (res.ok) {
+                    alert('🎉 Bypassed and unlocked all client devices!');
+                    await fetchFreshDB();
+                    if (activeTab === 'sessions') renderSessions();
+                    else refreshStatCards();
+                }
+            } catch (err) {
+                alert('Action failed: Connection to host refused.');
+            }
+        }
+
+        async function resetTrial(fpHash) {
+            try {
+                const res = await fetch('/api/system-admin/trial/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ device_fingerprint_hash: fpHash })
+                });
+
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderTrials();
+                }
+            } catch (e) {
+                alert('API operation timeout.');
+            }
+        }
+
+        async function clearAllTrials() {
+            if (!confirm('Are you sure you want to clear all guest limits?')) return;
+            try {
+                const res = await fetch('/api/system-admin/trial/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ clear_all: true })
+                });
+
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderTrials();
+                }
+            } catch (e) {
+                alert('Operation aborted.');
+            }
+        }
+
+        async function unlockSession(sessId) {
+            try {
+                const res = await fetch('/api/system-admin/sessions/unlock', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ session_id: sessId })
+                });
+
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderSessions();
+                }
+            } catch (e) {
+                alert('Communication timeout.');
+            }
+        }
+
+        async function revokeSession(sessId) {
+            if (!confirm('Killing this session will immediately disconnect the user and force them to re-verify. Proceed?')) return;
+            try {
+                const res = await fetch('/api/system-admin/sessions/delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ session_id: sessId })
+                });
+
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderSessions();
+                }
+            } catch (e) {
+                alert('Action failed.');
+            }
+        }
+
+        function openCreateUserModal() {
+            document.getElementById('create-user-form').reset();
+            document.getElementById('create-owner-pin').value = '1234';
+            document.getElementById('create-user-modal').classList.remove('hidden');
+        }
+
+        function closeCreateUserModal() {
+            document.getElementById('create-user-modal').classList.add('hidden');
+        }
+
+        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const phone_or_email = document.getElementById('create-phone-or-email').value.trim();
+            const full_name = document.getElementById('create-full-name').value.trim();
+            const business_name = document.getElementById('create-business-name').value.trim();
+            const owner_pin = document.getElementById('create-owner-pin').value.trim();
+            const subscriptionPlan = document.getElementById('create-sub-plan').value;
+            const subscriptionStatus = document.getElementById('create-sub-status').value;
+
+            try {
+                const res = await fetch('/api/system-admin/users/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({
+                        phone_or_email,
+                        full_name,
+                        business_name,
+                        owner_pin,
+                        subscriptionPlan,
+                        subscriptionStatus
+                    })
+                });
+
+                if (res.ok) {
+                    closeCreateUserModal();
+                    await fetchFreshDB();
+                    renderMerchants();
+                } else {
+                    const data = await res.json();
+                    alert('Register reject: ' + (data.error || 'Server rejected request.'));
+                }
+            } catch (err) {
+                alert('Submission error.');
+            }
+        });
+
+        function openEditUserModal(userId) {
+            const u = (systemData.users || []).find(x => x.id === userId);
+            if (!u) return;
+
+            document.getElementById('edit-user-id').value = u.id;
+            document.getElementById('edit-phone-or-email').value = u.phone_or_email || '';
+            document.getElementById('edit-full-name').value = u.full_name || '';
+            document.getElementById('edit-business-name').value = u.business_name || '';
+            document.getElementById('edit-owner-pin').value = u.owner_pin || '';
+            document.getElementById('edit-sub-plan').value = u.subscriptionPlan || 'SME Basic';
+            document.getElementById('edit-sub-status').value = u.subscriptionStatus || 'active';
+            document.getElementById('edit-shop-slug').value = u.shop_slug || '';
+            document.getElementById('edit-trial-count').value = u.trialCount || 0;
+
+            document.getElementById('edit-user-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeEditUserModal() {
+            document.getElementById('edit-user-modal').classList.add('hidden');
+        }
+
+        document.getElementById('edit-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-user-id').value;
+            const full_name = document.getElementById('edit-full-name').value.trim();
+            const business_name = document.getElementById('edit-business-name').value.trim();
+            const owner_pin = document.getElementById('edit-owner-pin').value.trim();
+            const subscriptionPlan = document.getElementById('edit-sub-plan').value;
+            const subscriptionStatus = document.getElementById('edit-sub-status').value;
+            const shop_slug = document.getElementById('edit-shop-slug').value.trim();
+            const trialCount = parseInt(document.getElementById('edit-trial-count').value || '0', 10);
+
+            try {
+                const res = await fetch('/api/system-admin/users/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({
+                        id,
+                        full_name,
+                        business_name,
+                        owner_pin,
+                        subscriptionPlan,
+                        subscriptionStatus,
+                        shop_slug,
+                        trialCount
+                    })
+                });
+
+                if (res.ok) {
+                    closeEditUserModal();
+                    await fetchFreshDB();
+                    renderMerchants();
+                } else {
+                    const data = await res.json();
+                    alert('Failed to update: ' + (data.error || 'Request rejected.'));
+                }
+            } catch (err) {
+                alert('Communication mismatch.');
+            }
+        });
+
+        async function deleteUser(userId, contact) {
+            if (!confirm(\`🚨 EXTREME WARNING: Are you absolutely sure you want to permanently delete merchant "\${contact}"? This will terminate all active merchant sessions and purge their access keys instantly.\`)) {
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/system-admin/users/delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ id: userId })
+                });
+
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderMerchants();
+                } else {
+                    const data = await res.json();
+                    alert('Error: ' + data.error);
+                }
+            } catch (e) {
+                alert('Connection mismatch during user eradication.');
+            }
+        }
+    </script>
+</body>
+</html>
+    `);
+});
+
+// Admin API endpoints
+app.get("/api/system-admin/db", requireSystemAdmin, (req, res) => {
+    try {
+        const db = readDB();
+        res.json(db);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to load database state" });
+    }
+});
+
+app.post("/api/system-admin/db", requireSystemAdmin, (req, res) => {
+    try {
+        const updatedDb = req.body;
+        if (!updatedDb || typeof updatedDb !== "object") {
+            return res.status(400).json({ error: "Invalid layout data structure" });
+        }
+        writeDB(updatedDb);
+        res.json({ status: "success" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to persist database state" });
+    }
+});
+
+app.post("/api/system-admin/users/create", requireSystemAdmin, (req, res) => {
+    try {
+        const { phone_or_email, full_name, business_name, owner_pin, subscriptionPlan, subscriptionStatus } = req.body;
+        if (!phone_or_email) {
+            return res.status(400).json({ error: "Email or phone address is required to register a merchant" });
+        }
+
+        const normalized = normalizeContact(phone_or_email);
+        const db = readDB();
+
+        const existingUser = db.users.find((u: any) => normalizeContact(u.phone_or_email) === normalized);
+        if (existingUser) {
+            return res.status(400).json({ error: "A merchant with that exact contact info is already registered" });
+        }
+
+        const newUser = {
+            id: "user_" + Math.random().toString(36).substring(2, 11),
+            phone_or_email: normalized,
+            otp_secret: "manual_creation_clearance_token_" + Math.floor(Math.random() * 90000),
+            full_name: full_name || "Merchant",
+            business_name: business_name || "My Retail Business",
+            owner_pin: owner_pin || "1234",
+            shop_slug: (business_name || "merchant").toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-"),
+            subscriptionPlan: subscriptionPlan || "SME Basic",
+            subscriptionStatus: subscriptionStatus || "active",
+            trialCount: 0
+        };
+
+        db.users.push(newUser);
+        writeDB(db);
+
+        res.json({ status: "success", user: newUser });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Eradication error in user registry" });
+    }
+});
+
+app.post("/api/system-admin/users/update", requireSystemAdmin, (req, res) => {
+    try {
+        const { id, full_name, business_name, owner_pin, subscriptionPlan, subscriptionStatus, shop_slug, trialCount } = req.body;
+        if (!id) {
+            return res.status(400).json({ error: "User specification id required to apply modifications" });
+        }
+
+        const db = readDB();
+        const userIndex = db.users.findIndex((u: any) => u.id === id);
+        
+        if (userIndex === -1) {
+            return res.status(404).json({ error: "Target merchant not detected in live ledger registers" });
+        }
+
+        db.users[userIndex] = {
+            ...db.users[userIndex],
+            full_name: full_name ?? db.users[userIndex].full_name,
+            business_name: business_name ?? db.users[userIndex].business_name,
+            owner_pin: owner_pin ?? db.users[userIndex].owner_pin,
+            shop_slug: shop_slug !== undefined ? shop_slug : db.users[userIndex].shop_slug,
+            subscriptionPlan: subscriptionPlan ?? db.users[userIndex].subscriptionPlan,
+            subscriptionStatus: subscriptionStatus ?? db.users[userIndex].subscriptionStatus,
+            trialCount: typeof trialCount === 'number' ? trialCount : db.users[userIndex].trialCount
+        };
+
+        writeDB(db);
+        res.json({ status: "success", user: db.users[userIndex] });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to store merchant modification overlay" });
+    }
+});
+
+app.delete("/api/system-admin/users/delete", requireSystemAdmin, (req, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) {
+            return res.status(400).json({ error: "Must specify unique merchant ID to clear credentials" });
+        }
+
+        const db = readDB();
+        
+        // Remove the merchant user
+        const initialCount = db.users.length;
+        db.users = db.users.filter((u: any) => u.id !== id);
+        
+        if (db.users.length === initialCount) {
+            return res.status(404).json({ error: "Merchant registry index reference not discovered" });
+        }
+
+        // Kill active user sessions
+        db.merchantSessions = db.merchantSessions.filter((s: any) => s.user_id !== id);
+
+        writeDB(db);
+        res.json({ status: "success", id });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Eradication error" });
+    }
+});
+
+app.post("/api/system-admin/sessions/unlock", requireSystemAdmin, (req, res) => {
+    try {
+        const { session_id } = req.body;
+        if (!session_id) return res.status(400).json({ error: "session_id is required" });
+
+        const db = readDB();
+        const sess = db.merchantSessions.find((s: any) => s.session_id === session_id);
+        if (sess) {
+            sess.is_suspicious_locked = false;
+            writeDB(db);
+            return res.json({ status: "success" });
+        }
+        res.status(404).json({ error: "Session identity missing inside core validated session maps" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Verification lock reset failed." });
+    }
+});
+
+app.delete("/api/system-admin/sessions/delete", requireSystemAdmin, (req, res) => {
+    try {
+        const { session_id } = req.body;
+        if (!session_id) return res.status(400).json({ error: "session_id is required" });
+
+        const db = readDB();
+        db.merchantSessions = db.merchantSessions.filter((s: any) => s.session_id !== session_id);
+        writeDB(db);
+        res.json({ status: "success" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Session termination aborted" });
+    }
+});
+
+app.post("/api/system-admin/trial/reset", requireSystemAdmin, (req, res) => {
+    try {
+        const { device_fingerprint_hash, clear_all } = req.body;
+        const db = readDB();
+
+        if (clear_all) {
+            db.anonymousTrialTrackers = [];
+            writeDB(db);
+            return res.json({ status: "success" });
+        }
+
+        if (!device_fingerprint_hash) {
+            return res.status(400).json({ error: "Missing identity to clear trial count index" });
+        }
+
+        db.anonymousTrialTrackers = db.anonymousTrialTrackers.filter((t: any) => t.device_fingerprint_hash !== device_fingerprint_hash);
+        writeDB(db);
+        res.json({ status: "success" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Guest limits reset rejected." });
+    }
+});
+
+app.post("/api/system-admin/unlock-all", requireSystemAdmin, (req, res) => {
+    try {
+        const db = readDB();
+        db.merchantSessions.forEach((s: any) => s.is_suspicious_locked = false);
+        writeDB(db);
+        res.json({ status: "success", message: "All sessions successfully cleared of lock triggers." });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Lockout scanner process failed" });
+    }
 });
 
 app.post("/api/terminal/:shop_slug/:worker_slug/pin-verify", (req, res) => {

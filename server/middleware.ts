@@ -177,6 +177,11 @@ export const requireSession = async (req: Request, res: Response, next: NextFunc
         }
         writeDB(db);
         
+        const user = db.users.find((u: any) => u.id === session.user_id);
+        if (user && user.subscriptionStatus === 'suspended') {
+            return res.status(403).json({ error: "Your account has been manually suspended by system administrators. Please contact operations support." });
+        }
+        
         (req as any).user_id = session.user_id;
         (req as any).session = session;
         next();
