@@ -18,6 +18,7 @@ export interface Invoice {
   createdAt: string;
   status?: 'DRAFT' | 'PAID' | 'OVERDUE';
   staffName?: string;
+  category?: string;
 }
 
 export interface Customer {

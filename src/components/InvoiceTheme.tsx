@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Invoice, BusinessProfile, Customer } from '../types';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
 import { WhatsAppPayLinkGenerator } from './WhatsAppPayLinkGenerator';
+
+const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "+234 802 841 6553";
 import { 
   Printer, 
   Calendar, 
@@ -870,7 +872,7 @@ export default function InvoiceTheme({
         </h3>
         <div className="grid grid-cols-2 gap-4">
           
-          <WhatsAppPayLinkGenerator invoice={invoice} businessPhone={phone || "+2348028416553"} />
+          <WhatsAppPayLinkGenerator invoice={invoice} businessPhone={phone || SUPPORT_PHONE} />
 
           {/* WHATSAPP CARD (Soft Green background) */}
           <button 

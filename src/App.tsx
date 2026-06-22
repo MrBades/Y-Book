@@ -28,7 +28,7 @@ import PricingGrid from './components/PricingGrid';
 import CloseAccountCard from './components/CloseAccountCard';
 import InteractiveTour from './components/InteractiveTour';
 import { formatNaira } from './utils/currency';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
 import { 
   BookOpen, 
   TrendingUp, 
@@ -63,7 +63,8 @@ import {
   Sparkles,
   Printer,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Trash2
 } from 'lucide-react';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
@@ -79,6 +80,9 @@ const getPlanTier = (planName?: string): number => {
   if (name.includes('growth')) return 2;
   return 1; // SME Basic / Free
 };
+
+const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "+234 802 841 6553";
+const SUPPORT_PHONE_CLEAN = SUPPORT_PHONE.replace(/[^\d]/g, '');
 
 export default function App() {
   // Temporary session unlock on load
@@ -473,7 +477,7 @@ export default function App() {
       const data = await res.json();
       if (data.verificationCode) {
         setSuspiciousWaCode(data.verificationCode);
-        const waLink = `https://wa.me/2348028416553?text=Verify%20my%20Yeedem%20account%20code:%20${data.verificationCode}`;
+        const waLink = `https://wa.me/${SUPPORT_PHONE_CLEAN}?text=Verify%20my%20Yeedem%20account%20code:%20${data.verificationCode}`;
         window.open(waLink, '_blank');
       } else {
         throw new Error("No verification code received");
@@ -1131,13 +1135,28 @@ export default function App() {
   });
   const [dashboardWidgets, setDashboardWidgets] = useState<Array<{ id: string; label: string; visible: boolean; description: string }>>(() => {
     const saved = localStorage.getItem('dashboard_widgets_custom');
-    return saved ? JSON.parse(saved) : [
+    const defaultWidgets = [
       { id: 'ai_widget', label: 'AI Voice & Text Invoice Widget', visible: true, description: 'Natural language parsing interface' },
       { id: 'pulse', label: 'Daily Pulse Metric Section', visible: true, description: 'Real-time daily cash ledger & credit tracker' },
+      { id: 'expense_chart', label: 'Expense Category Breakdown', visible: true, description: 'Pie chart analyzing expenses by category' },
       { id: 'trend_chart', label: '7-Days Sales Volume Trend Chart', visible: true, description: 'Line graph tracking invoices vs payments' },
       { id: 'profit_chart', label: '30-Days Net Profit Trend Chart', visible: true, description: 'Area graph displaying net profit margins' },
       { id: 'logs', label: 'Recent Transaction Logs', visible: true, description: 'Recent trade records and receipts layout' },
     ];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          if (!parsed.some((w: any) => w.id === 'expense_chart')) {
+            parsed.splice(2, 0, defaultWidgets[2]);
+          }
+          return parsed;
+        }
+      } catch (e) {
+        console.error("Error parsing saved widgets", e);
+      }
+    }
+    return defaultWidgets;
   });
 
   const moveKPI = (index: number, direction: 'up' | 'down') => {
@@ -1183,6 +1202,14 @@ export default function App() {
   const [editProdPrice, setEditProdPrice] = useState('0');
   const [editProdCostPrice, setEditProdCostPrice] = useState('0');
 
+  // Expense logging states
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseCategory, setExpenseCategory] = useState('Office Supplies');
+  const [expenseVendor, setExpenseVendor] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
+  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().substring(0, 10));
+
   // Manual input form states embedded directly on page side backup as fallback
   const [manualCustomer, setManualCustomer] = useState('');
   const [manualProductName, setManualProductName] = useState('');
@@ -1195,6 +1222,7 @@ export default function App() {
     let salesTotal = 0;
     let paidTotal = 0;
     let cogsTotal = 0;
+    let expensesTotal = 0;
 
     customers.forEach((cust) => {
       (cust.invoices || []).forEach((inv) => {
@@ -1215,17 +1243,20 @@ export default function App() {
           });
         } else if (inv.transactionType === 'payment_on_account') {
           paidTotal += inv.amountPaid;
+        } else if (inv.transactionType === 'expense') {
+          expensesTotal += inv.totalAmount;
         }
       });
     });
 
     const outstandingTotal = customers.reduce((acc, c) => acc + c.activeDebtBalance, 0);
-    const netProfit = salesTotal - cogsTotal;
+    const netProfit = salesTotal - cogsTotal - expensesTotal;
 
     return {
       salesTotal,
       paidTotal,
       cogsTotal,
+      expensesTotal,
       netProfit,
       outstandingTotal
     };
@@ -1307,6 +1338,82 @@ export default function App() {
     });
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [customers]);
+
+  const expensePieData = useMemo(() => {
+    const categories = ['Office Supplies', 'Logistics', 'Rent', 'Wages'];
+    const sums: { [key: string]: number } = {
+      'Office Supplies': 0,
+      'Logistics': 0,
+      'Rent': 0,
+      'Wages': 0,
+    };
+    let otherSum = 0;
+
+    customers.forEach((c) => {
+      (c.invoices || []).forEach((inv) => {
+        if (inv.transactionType === 'expense') {
+          const cat = inv.category || 'Office Supplies';
+          if (categories.includes(cat)) {
+            sums[cat] += inv.totalAmount;
+          } else {
+            otherSum += inv.totalAmount;
+          }
+        }
+      });
+    });
+
+    const list = categories.map(cat => ({
+      name: cat,
+      value: sums[cat]
+    }));
+
+    if (otherSum > 0) {
+      list.push({ name: 'Other', value: otherSum });
+    }
+
+    return list.filter(item => item.value > 0);
+  }, [customers]);
+
+  const productStockoutPredictions = useMemo(() => {
+    const predictions: { [productId: string]: { velocity: number; stockoutDays: number; stockoutDateStr: string } } = {};
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    products.forEach(p => {
+      let totalQtySold = 0;
+
+      customers.forEach(c => {
+        (c.invoices || []).forEach(inv => {
+          if (inv.transactionType === 'sale' && new Date(inv.createdAt) >= thirtyDaysAgo) {
+            (inv.items || []).forEach(item => {
+              if (item.name?.trim().toLowerCase() === p.name?.trim().toLowerCase()) {
+                totalQtySold += (item.quantity || 0);
+              }
+            });
+          }
+        });
+      });
+
+      const averageVelocity = totalQtySold / 30;
+      let stockoutDays = Infinity;
+      let stockoutDateStr = 'Never (Stable)';
+
+      if (averageVelocity > 0) {
+        stockoutDays = Math.ceil(p.stock / averageVelocity);
+        const sDate = new Date();
+        sDate.setDate(sDate.getDate() + stockoutDays);
+        stockoutDateStr = sDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+
+      predictions[p.id] = {
+        velocity: averageVelocity,
+        stockoutDays,
+        stockoutDateStr
+      };
+    });
+
+    return predictions;
+  }, [products, customers]);
 
   // Daily Pulse Today Metrics computation
   const todayMetrics = useMemo(() => {
@@ -1835,6 +1942,71 @@ export default function App() {
     // work immediately even if the viewer opens the link immediately.
     triggerDailyAutomatedBackup(true, nextCustomers, nextProducts).catch((err) => {
       console.warn("[BACKUP] Instant post-invoice backup auto-sync warning:", err);
+    });
+  };
+
+  const handleSaveExpense = (e: FormEvent) => {
+    e.preventDefault();
+    const amountVal = parseFloat(expenseAmount) || 0;
+    if (amountVal <= 0) {
+      alert("Please enter a valid expense amount.");
+      return;
+    }
+
+    const matchName = expenseVendor.trim() || "General Expense Vendor";
+
+    const newInvoice: Invoice = {
+      id: "inv_" + Date.now().toString(),
+      customerName: matchName,
+      productName: `Expense: ${expenseCategory}`,
+      items: [{
+        name: expenseDescription.trim() || `Expense: ${expenseCategory}`,
+        quantity: 1,
+        price: amountVal,
+        total: amountVal
+      }],
+      totalAmount: amountVal,
+      amountPaid: amountVal,
+      debtBalance: 0,
+      transactionType: 'expense',
+      category: expenseCategory,
+      createdAt: new Date(expenseDate).toISOString(),
+      staffName: userState.username
+    };
+
+    const matchIndex = customers.findIndex(c => c.name.toLowerCase() === matchName.toLowerCase());
+    let nextCustomers: Customer[];
+
+    if (matchIndex >= 0) {
+      nextCustomers = [...customers];
+      nextCustomers[matchIndex] = {
+        ...nextCustomers[matchIndex],
+        invoices: [newInvoice, ...nextCustomers[matchIndex].invoices]
+      };
+    } else {
+      const newCustomer: Customer = {
+        id: "cust_" + Date.now().toString(),
+        name: matchName,
+        activeDebtBalance: 0,
+        createdDate: new Date().toISOString().split('T')[0],
+        invoices: [newInvoice]
+      };
+      nextCustomers = [...customers, newCustomer];
+    }
+
+    setCustomers(nextCustomers);
+
+    // Reset and close
+    setExpenseAmount('');
+    setExpenseVendor('');
+    setExpenseDescription('');
+    setExpenseCategory('Office Supplies');
+    setShowExpenseModal(false);
+
+    alert("Expense logged successfully!");
+
+    triggerDailyAutomatedBackup(true, nextCustomers, products).catch((err) => {
+      console.warn("[BACKUP] Instant post-expense backup auto-sync warning:", err);
     });
   };
 
@@ -3410,8 +3582,26 @@ export default function App() {
         )}
 
         {/* DASHBOARD VIEWPORT */}
-        {activeScreen === 'dashboard' && (
+         {activeScreen === 'dashboard' && (
           <div className="space-y-6 animate-fadeIn">
+            {/* Elegant Dashboard Header & Live Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-150 pb-4">
+              <div>
+                <h1 className="text-xl font-extrabold text-gray-900 font-sans tracking-tight">Enterprise Ledger Dashboard</h1>
+                <p className="text-xs text-gray-400">Track visual metrics, log cash outflow expenses, and manage stock inventories.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseModal(true)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-rose-600/10 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span>Log Expense</span>
+                </button>
+              </div>
+            </div>
+
             {/* 1. Quick Voice & Text Invoice Generator (FIRST SECTION) */}
             <div id="tour-smart-widget" className="animate-scaleIn w-full">
               <SmartWidget 
@@ -3687,6 +3877,80 @@ export default function App() {
                             </AreaChart>
                           </ResponsiveContainer>
                         </div>
+                      </div>
+                    );
+
+                  case 'expense_chart':
+                    const EXPENSE_COLORS = ['#3B82F6', '#10B981', '#EF4444', '#F59E0B', '#8B5CF6'];
+                    return (
+                      <div key="expense_chart" className="bg-white rounded-[24px] p-6 shadow-sm animate-scaleIn w-full">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b pb-3 border-gray-100">
+                          <div>
+                            <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-[#0E1338]">Expense Category Breakdown</h3>
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">Distribution of cash outflows across strategic operating categories</p>
+                          </div>
+                        </div>
+
+                        {expensePieData.length === 0 ? (
+                          <div className="h-56 flex flex-col items-center justify-center text-xs text-gray-400 italic text-center space-y-2">
+                            <Trash2 className="w-8 h-8 text-gray-300 stroke-[1.5]" />
+                            <p>No logged expenses matched in current books.</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowExpenseModal(true)}
+                              className="text-[#00A6FF] font-bold hover:underline"
+                            >
+                              Log your first expense
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                            <div className="h-56 md:col-span-7 font-mono relative">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={expensePieData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={50}
+                                    outerRadius={75}
+                                    paddingAngle={4}
+                                    dataKey="value"
+                                  >
+                                    {expensePieData.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={EXPENSE_COLORS[index % EXPENSE_COLORS.length]} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip
+                                    formatter={(value: number) => `₦${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                                    contentStyle={{ backgroundColor: '#0E1338', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '11px' }}
+                                  />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="md:col-span-5 space-y-3">
+                              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Detailed Categories</h4>
+                              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                {expensePieData.map((entry, idx) => {
+                                  const totalExpVal = expensePieData.reduce((sum, e) => sum + e.value, 0);
+                                  const pct = totalExpVal > 0 ? ((entry.value / totalExpVal) * 100).toFixed(1) : '0';
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between text-[11px] border-b border-gray-50 pb-1.5 last:border-b-0">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: EXPENSE_COLORS[idx % EXPENSE_COLORS.length] }}></span>
+                                        <span className="font-semibold text-gray-700 truncate">{entry.name}</span>
+                                      </div>
+                                      <div className="text-right font-mono shrink-0">
+                                        <span className="font-bold text-gray-900">₦{entry.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                        <span className="text-gray-400 text-[9px] block text-center mt-0.5">({pct}%)</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
 
@@ -4084,6 +4348,17 @@ export default function App() {
                 
                 {inventoryTab === 'catalog' ? (
                   <div className="overflow-x-auto text-xs animate-fadeIn">
+                    {!isService && (
+                      <div className="mb-4 bg-gradient-to-r from-blue-50 to-[#00A6FF]/5 border border-[#00A6FF]/15 p-3.5 rounded-2xl flex items-start gap-2.5">
+                        <Sparkles className="w-5 h-5 text-[#00A6FF] shrink-0 mt-0.5 animate-pulse" />
+                        <div className="space-y-0.5 text-left">
+                          <h4 className="text-xs font-bold text-[#0E1338]">Restock Intelligence Mode Active</h4>
+                          <p className="text-[10px] text-gray-500 leading-relaxed">
+                            Predicted Stockout Dates are computed in real-time based on your enterprise's trailing 30-day sales velocity profile, enabling preemptive supplier restock planning.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     {/* Catalog Filter Buttons */}
                     {!isService && (
                       <div className="flex flex-wrap gap-2 mb-4 bg-gray-50 border border-gray-150 p-2.5 rounded-2xl">
@@ -4194,7 +4469,25 @@ export default function App() {
                                     className="w-full p-1 text-xs font-bold rounded border border-gray-200 bg-white"
                                   />
                                 ) : (
-                                  p.name
+                                  <>
+                                    <span>{p.name}</span>
+                                    {!isService && (
+                                      <div className="text-[10px] text-gray-400 font-normal mt-0.5 flex flex-wrap gap-2 items-center">
+                                        <span>
+                                          Velocity: <strong className="text-gray-600">{(productStockoutPredictions[p.id]?.velocity * 30).toFixed(1)}/mo</strong> ({(productStockoutPredictions[p.id]?.velocity).toFixed(2)}/day)
+                                        </span>
+                                        <span className="text-gray-300">•</span>
+                                        <span className="flex items-center gap-1">
+                                          Stockout: <strong className={`font-mono font-bold ${productStockoutPredictions[p.id]?.stockoutDays <= 7 ? 'text-red-650' : productStockoutPredictions[p.id]?.stockoutDays <= 15 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                                            {productStockoutPredictions[p.id]?.stockoutDateStr}
+                                          </strong>
+                                          {productStockoutPredictions[p.id]?.stockoutDays !== Infinity && (
+                                            <span className="text-gray-450 font-normal text-[9px] ml-0.5">({productStockoutPredictions[p.id]?.stockoutDays}d left)</span>
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </td>
                               {!isService && (
@@ -4839,6 +5132,95 @@ export default function App() {
         </div>
       )}
 
+      {/* EXPENSE LOGGING MODAL */}
+      {showExpenseModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-[#161C48] border border-white/10 rounded-[32px] p-6 text-white max-w-md w-full relative shadow-2xl space-y-6">
+            <button
+              onClick={() => setShowExpenseModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white transition p-1.5 rounded-full hover:bg-white/5"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="space-y-2 text-left">
+              <span className="px-2.5 py-0.5 bg-rose-500/10 text-rose-400 rounded-full text-[10px] font-extrabold uppercase tracking-wide border border-rose-500/10 inline-block">Cash Outflow</span>
+              <h2 className="text-lg font-bold font-sans">Log Business Expense</h2>
+              <p className="text-[11px] text-gray-300">Log operating costs, logistics, rent, supplies, or wages here to deduct from enterprise net profits.</p>
+            </div>
+            
+            <form onSubmit={handleSaveExpense} className="space-y-4 text-xs text-left">
+              <div className="space-y-1.5">
+                <label className="block text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Expense Category</label>
+                <select
+                  value={expenseCategory}
+                  onChange={(e) => setExpenseCategory(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-white/10 bg-[#0E1338] text-white p-3 font-semibold focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] outline-none"
+                >
+                  <option value="Office Supplies">Office Supplies</option>
+                  <option value="Logistics">Logistics</option>
+                  <option value="Rent">Rent</option>
+                  <option value="Wages">Wages</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Amount (₦)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    placeholder="e.g. 15000"
+                    className="w-full text-xs rounded-xl border border-white/10 bg-[#0E1338] text-white p-3 font-bold focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] outline-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Expense Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-white/10 bg-[#0E1338] text-white p-3 font-semibold focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Vendor / Recipient</label>
+                <input
+                  type="text"
+                  value={expenseVendor}
+                  onChange={(e) => setExpenseVendor(e.target.value)}
+                  placeholder="e.g. Alao Stationery, Electric Corp"
+                  className="w-full text-xs rounded-xl border border-white/10 bg-[#0E1338] text-white p-3 focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-gray-400 font-semibold uppercase tracking-wider text-[10px]">Description / Receipt details</label>
+                <textarea
+                  value={expenseDescription}
+                  onChange={(e) => setExpenseDescription(e.target.value)}
+                  placeholder="e.g. Purchased printer toner and paper sacks"
+                  rows={2}
+                  className="w-full text-xs rounded-xl border border-white/10 bg-[#0E1338] text-white p-3 focus:border-[#00A6FF] focus:ring-1 focus:ring-[#00A6FF] outline-none resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-[#00A6FF] hover:bg-opacity-90 font-extrabold uppercase tracking-widest text-xs text-white rounded-xl shadow-lg transition mt-2 cursor-pointer"
+              >
+                Committed & Save Expense
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Sticky Compact Application Footer styled under premium obsidian charcoal #070914 */}
       {(activeScreen !== 'invoice_preview' || userState.authenticated) && activeScreen !== 'terminal' && (
       <footer className="bg-[#070914] border-t border-white/5 py-8 px-6 text-xs text-white/70">
@@ -4930,8 +5312,22 @@ export default function App() {
         businessName={userState.business?.businessName}
       />
       {!isOnline && (
-        <div className="fixed top-0 left-0 w-full bg-amber-500 text-white text-center py-3 z-[60] font-bold shadow-lg animate-pulse">
-          ⚠️ You are currently offline. Ledger updates are being cached locally.
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 bg-amber-600 text-white p-4 rounded-2xl shadow-2xl z-[99] flex items-center gap-3 animate-bounce border border-amber-500">
+          <span className="text-sm shrink-0">⚠️</span>
+          <p className="text-[11px] leading-relaxed font-bold flex-1">
+            You are currently offline. Ledger updates are being cached locally.
+          </p>
+        </div>
+      )}
+      {deferredPrompt && !isAppInstalled && (
+        <div className="fixed bottom-20 right-4 z-[45] animate-bounce">
+          <button
+            onClick={handleInstallPWA}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-full shadow-2xl text-xs font-black transition-all border border-emerald-500/30"
+          >
+            <Smartphone className="w-4 h-4 text-emerald-300 shrink-0" />
+            <span>Install Yeedem Books</span>
+          </button>
         </div>
       )}
       {userState.authenticated && <SyncNotificationChip userEmail={userState.email} onSync={() => triggerDailyAutomatedBackup(true)} />}
@@ -5146,7 +5542,7 @@ export default function App() {
                     {suspiciousWaCode}
                   </p>
                   <a
-                    href={`https://wa.me/2348028416553?text=Verify%20my%20Yeedem%20account%20code:%20${suspiciousWaCode}`}
+                    href={`https://wa.me/${SUPPORT_PHONE_CLEAN}?text=Verify%20my%20Yeedem%20account%20code:%20${suspiciousWaCode}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-block text-[11px] font-extrabold text-[#00A6FF] hover:underline"

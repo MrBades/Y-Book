@@ -2023,6 +2023,28 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
         .mono {
             font-family: 'JetBrains Mono', monospace;
         }
+        /* Custom scroll utilities for responsive cards and tables */
+        .scrollbar-none::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-none {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .mini-scrollbar::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        .mini-scrollbar::-webkit-scrollbar-track {
+            background: #080914;
+        }
+        .mini-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e2142;
+            border-radius: 9999px;
+        }
+        .mini-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #2a2e5c;
+        }
     </style>
 </head>
 <body class="text-slate-100 min-h-screen flex flex-col">
@@ -2068,30 +2090,30 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
     <!-- main Dashboard Application Container -->
     <div id="dashboard-container" class="hidden flex-1 flex flex-col">
         <!-- Navigation Header -->
-        <header class="bg-[#111329] border-b border-blue-500/10 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+        <header class="bg-[#111329] border-b border-blue-500/10 px-4 py-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-[#00A6FF]/10 text-[#00A6FF] rounded-xl flex items-center justify-center border border-[#00A6FF]/20">
+                <div class="w-10 h-10 bg-[#00A6FF]/10 text-[#00A6FF] rounded-xl flex items-center justify-center border border-[#00A6FF]/20 shrink-0">
                     <i data-lucide="database" class="w-5 h-5"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg font-black tracking-tight text-white">Yeedem System Admin</h1>
-                    <span class="text-[10px] text-[#00A6FF] font-bold tracking-widest uppercase">Platform Control Deck</span>
+                    <h1 class="text-base sm:text-lg font-black tracking-tight text-white">Yeedem System Admin</h1>
+                    <span class="text-[9px] sm:text-[10px] text-[#00A6FF] font-bold tracking-widest uppercase block">Platform Control Deck</span>
                 </div>
             </div>
             
-            <div class="flex items-center gap-3">
-                <button onclick="triggerUnlockAll()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/20">
+            <div class="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <button onclick="triggerUnlockAll()" class="flex-1 sm:flex-none justify-center px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/20 whitespace-nowrap">
                     <i data-lucide="unlock" class="w-3.5 h-3.5"></i>
-                    Bypass All Locked Sessions
+                    Bypass Locked Sessions
                 </button>
-                <button onclick="logoutAdmin()" class="p-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded-lg transition-all" title="Logout Panel">
+                <button onclick="logoutAdmin()" class="p-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-900/30 rounded-lg transition-all flex items-center justify-center shrink-0" title="Logout Panel">
                     <i data-lucide="log-out" class="w-4 h-4"></i>
                 </button>
             </div>
         </header>
 
         <!-- Metric Cards -->
-        <section class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <section class="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-5 relative overflow-hidden">
                 <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Registered Merchants</div>
                 <div id="stat-total-users" class="text-3xl font-black mt-2 text-white mono">0</div>
@@ -2123,43 +2145,43 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
         </section>
 
         <!-- Main Workspace Tabs -->
-        <div class="px-6 border-b border-blue-500/10 flex gap-2">
-            <button onclick="setTab('merchants')" id="tab-merchants" class="px-5 py-3 text-xs font-extrabold border-b-2 border-[#00A6FF] text-[#00A6FF] transition-all flex items-center gap-2">
+        <div class="px-4 sm:px-6 border-b border-blue-500/10 flex gap-1 sm:gap-2 overflow-x-auto whitespace-nowrap scrollbar-none shrink-0" style="-webkit-overflow-scrolling: touch;">
+            <button onclick="setTab('merchants')" id="tab-merchants" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-[#00A6FF] text-[#00A6FF] transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="users" class="w-3.5 h-3.5"></i> Merchants Catalog
             </button>
-            <button onclick="setTab('sessions')" id="tab-sessions" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+            <button onclick="setTab('sessions')" id="tab-sessions" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Active Sessions
             </button>
-            <button onclick="setTab('trials')" id="tab-trials" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+            <button onclick="setTab('trials')" id="tab-trials" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="gift" class="w-3.5 h-3.5"></i> Trial Codes
             </button>
-            <button onclick="setTab('rawdb')" id="tab-rawdb" class="px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2">
+            <button onclick="setTab('rawdb')" id="tab-rawdb" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="file-json" class="w-3.5 h-3.5"></i> raw db.json
             </button>
         </div>
 
         <!-- Tab Content Viewport -->
-        <main class="flex-1 p-6 relative overflow-hidden">
+        <main class="flex-1 p-4 sm:p-6 relative overflow-hidden">
             <!-- Merchants Tab -->
             <div id="view-merchants" class="space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-4 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
-                    <div class="relative flex-1 max-w-md">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <div class="relative w-full sm:max-w-md">
                         <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
                             <i data-lucide="search" class="w-4 h-4"></i>
                         </span>
                         <input type="text" id="merchant-search" oninput="renderMerchants()" placeholder="Search merchants by name, user id, contact details..."
                             class="w-full pl-9 pr-4 py-2.5 bg-[#0b0c15] border border-gray-800 rounded-lg text-white placeholder-gray-500 focus:border-[#00A6FF] outline-none text-xs">
                     </div>
-                    <button onclick="openCreateUserModal()" class="px-4 py-2.5 bg-[#00A6FF] hover:bg-[#0070f3] text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg shadow-blue-500/10 transition-all">
+                    <button onclick="openCreateUserModal()" class="w-full sm:w-auto justify-center px-4 py-2.5 bg-[#00A6FF] hover:bg-[#0070f3] text-white rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-lg shadow-blue-500/10 transition-all">
                         <i data-lucide="user-plus" class="w-4 h-4"></i> Create Manual Merchant
                     </button>
                 </div>
 
                 <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto mini-scrollbar">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10 whitespace-nowrap">
                                     <th class="py-4 px-5">ID / Contact Email</th>
                                     <th class="py-4 px-5">Merchant Name</th>
                                     <th class="py-4 px-5">Business Name & Shop Slug</th>
@@ -2178,19 +2200,19 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
 
             <!-- Sessions Tab -->
             <div id="view-sessions" class="space-y-4 hidden">
-                <div class="flex items-center justify-between bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
                     <h2 class="text-sm font-black text-white flex items-center gap-2">
-                        <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400"></i>
-                        System Authorized Credentials Table
+                        <i data-lucide="smartphone" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                        <span>System Authorized Credentials Table</span>
                     </h2>
-                    <span id="sessions-count-badge" class="px-2.5 py-1 bg-emerald-950 text-emerald-400 rounded-full text-[10px] font-bold border border-emerald-900/30">0 ACTIVE</span>
+                    <span id="sessions-count-badge" class="self-start sm:self-auto px-2.5 py-1 bg-emerald-950 text-emerald-400 rounded-full text-[10px] font-bold border border-emerald-900/30 whitespace-nowrap">0 ACTIVE</span>
                 </div>
 
                 <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto mini-scrollbar">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10 whitespace-nowrap">
                                     <th class="py-4 px-5">User ID Target</th>
                                     <th class="py-4 px-5">OAuth / Web Session ID</th>
                                     <th class="py-4 px-5">IP & Active Region</th>
@@ -2208,21 +2230,21 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
 
             <!-- Trials Tab -->
             <div id="view-trials" class="space-y-4 hidden">
-                <div class="flex items-center justify-between bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
                     <h2 class="text-sm font-black text-white flex items-center gap-2">
-                        <i data-lucide="gift" class="w-4 h-4 text-amber-500"></i>
-                        Anonymous IP Address Device Trial Limits
+                        <i data-lucide="gift" class="w-4 h-4 text-amber-500 shrink-0"></i>
+                        <span>Anonymous IP Device Trial Limits</span>
                     </h2>
-                    <button onclick="clearAllTrials()" class="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg text-xs font-bold transition-all border border-amber-500/20">
+                    <button onclick="clearAllTrials()" class="w-full sm:w-auto px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-lg text-xs font-bold transition-all border border-amber-500/20 text-center">
                         Purge All Trackers
                     </button>
                 </div>
 
                 <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
-                    <div class="overflow-x-auto">
+                    <div class="overflow-x-auto mini-scrollbar">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10">
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10 whitespace-nowrap">
                                     <th class="py-4 px-5">Device Fingerprint Hash</th>
                                     <th class="py-4 px-5">IP Location</th>
                                     <th class="py-4 px-5">Generated Invoices</th>
@@ -2240,25 +2262,25 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
 
             <!-- raw db.json Tab -->
             <div id="view-rawdb" class="space-y-4 hidden h-full flex flex-col">
-                <div class="flex flex-wrap items-center justify-between gap-3 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
                     <div>
                         <h2 class="text-sm font-black text-white">Direct DB State Manipulation (db.json)</h2>
-                        <p class="text-[11px] text-gray-400 mt-0.5">Use with caution. Modifying keys directly can affect backend validation routers.</p>
+                        <p class="text-[11px] text-gray-400 mt-0.5">Use with caution. Direct key overrides can trigger session mismatches.</p>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button onclick="downloadBackup()" class="px-3.5 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5">
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <button onclick="downloadBackup()" class="flex-1 sm:flex-none justify-center px-3.5 py-2 bg-[#0284c7] hover:bg-[#0369a1] text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 whitespace-nowrap">
                             <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                            Export JSON File
+                            Export JSON
                         </button>
-                        <button onclick="triggerRawSave()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5">
+                        <button onclick="triggerRawSave()" class="flex-1 sm:flex-none justify-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-extrabold transition-all flex items-center gap-1.5 whitespace-nowrap">
                             <i data-lucide="save" class="w-3.5 h-3.5"></i>
-                            Save JSON Overlay
+                            Save Overlay
                         </button>
                     </div>
                 </div>
                 
-                <div class="flex-1 bg-[#0b0c15] border border-blue-500/10 rounded-2xl overflow-hidden flex flex-col p-4 shadow-2xl mini-scrollbar font-mono text-xs">
-                    <textarea id="raw-db-textarea" class="w-full flex-1 bg-transparent text-emerald-400 border-none outline-none resize-none animate-none" style="min-height: 480px;"></textarea>
+                <div class="flex-1 bg-[#0b0c15] border border-blue-500/10 rounded-2xl overflow-hidden flex flex-col p-3 sm:p-4 shadow-2xl mini-scrollbar font-mono text-xs">
+                    <textarea id="raw-db-textarea" class="w-full flex-1 bg-transparent text-emerald-400 border-none outline-none resize-none animate-none h-[400px] sm:h-[500px]" style="min-height: 300px;"></textarea>
                 </div>
             </div>
         </main>
@@ -2266,8 +2288,8 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
 
     <!-- Create Manual User Modal -->
     <div id="create-user-modal" class="fixed inset-0 bg-[#040409]/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative">
-            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between">
+        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between shrink-0">
                 <h3 class="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
                     <i data-lucide="user-plus" class="text-[#00A6FF]"></i> Check-In New Merchant
                 </h3>
@@ -2276,7 +2298,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                 </button>
             </div>
             
-            <form id="create-user-form" class="p-6 space-y-4">
+            <form id="create-user-form" class="p-6 space-y-4 overflow-y-auto flex-1 mini-scrollbar">
                 <div>
                     <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Login Email / Phone Number Code</label>
                     <input type="text" id="create-phone-or-email" required placeholder="User identifier (e.g. merchant@mail.com)"
@@ -2320,7 +2342,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                     </div>
                 </div>
                 
-                <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-[#00A6FF] text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5">
+                <button type="submit" class="w-full py-3 bg-gradient-to-r from-blue-600 to-[#00A6FF] text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5 shrink-0">
                     <i data-lucide="check" class="w-4 h-4"></i> Complete Registration
                 </button>
             </form>
@@ -2329,8 +2351,8 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
 
     <!-- Edit User Modal -->
     <div id="edit-user-modal" class="fixed inset-0 bg-[#040409]/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
-        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative">
-            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between">
+        <div class="bg-[#111329] border border-blue-500/20 max-w-md w-full rounded-[24px] overflow-hidden shadow-2xl relative max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b border-blue-500/10 flex items-center justify-between shrink-0">
                 <h3 class="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
                     <i data-lucide="edit-3" class="text-[#00A6FF]"></i> Modify Merchant Specifications
                 </h3>
@@ -2339,7 +2361,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                 </button>
             </div>
             
-            <form id="edit-user-form" class="p-6 space-y-4">
+            <form id="edit-user-form" class="p-6 space-y-4 overflow-y-auto flex-1 mini-scrollbar">
                 <input type="hidden" id="edit-user-id">
                 <div>
                     <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Login Email / Phone Number Code</label>
@@ -2396,7 +2418,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                     </div>
                 </div>
                 
-                <button type="submit" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5">
+                <button type="submit" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-lg text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-1.5 shrink-0">
                     <i data-lucide="save" class="w-4 h-4"></i> Apply Specification Updates
                 </button>
             </form>

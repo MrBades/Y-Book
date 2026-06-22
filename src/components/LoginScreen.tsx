@@ -3,6 +3,9 @@ import { Lock, Smartphone, ShieldCheck, ArrowRightLeft, Sparkles, AlertTriangle,
 import LogoImg from '../assets/images/yeedem_books_logo_1779553023368.png';
 import { nodeFetch } from '../lib/api';
 
+const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "+234 802 841 6553";
+const SUPPORT_PHONE_CLEAN = SUPPORT_PHONE.replace(/[^\d]/g, '');
+
 export function normalizeContact(phoneOrEmailStr: string): string {
   let input = phoneOrEmailStr.trim();
   if (!input) return '';
@@ -372,7 +375,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
   };
 
   // Helper for WhatsApp
-  const waLink = `https://wa.me/2348028416553?text=Verify%20my%20Yeedem%20account%20code:%20${verificationCode}`;
+  const waLink = `https://wa.me/${SUPPORT_PHONE_CLEAN}?text=Verify%20my%20Yeedem%20account%20code:%20${verificationCode}`;
 
   return (
     <div className="w-full bg-[#161C48] rounded-[32px] p-8 border border-white/10 shadow-2xl text-center space-y-6 max-w-md mx-auto relative overflow-hidden">
@@ -624,7 +627,7 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
                 <p className="text-white text-xs font-mono">Expires in {Math.floor(timeLeft/60)}:{String(timeLeft%60).padStart(2,'0')}</p>
                 <p className="text-slate-300 text-[10px] text-center font-sans mt-2 bg-white/5 p-2 rounded-lg border border-white/5 leading-normal">
                    Manual message hook: <br />
-                   <span className="font-mono text-[#00A6FF] text-xs font-bold leading-none select-all font-semibold">Verify my Yeedem account code: {verificationCode}</span> to <span className="font-semibold text-white">+234 802 841 6553</span>
+                   <span className="font-mono text-[#00A6FF] text-xs font-bold leading-none select-all font-semibold">Verify my Yeedem account code: {verificationCode}</span> to <span className="font-semibold text-white">{SUPPORT_PHONE}</span>
                 </p>
                 {error && <p className="text-red-400 text-xs font-semibold text-center">{error}</p>}
 
