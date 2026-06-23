@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import DebtorAgingPieChart from './DebtorAgingPieChart';
 import { Customer, Invoice } from '../types';
+import { getAppBaseUrl } from '../utils/url';
 import { 
   Search, 
   UserMinus, 
@@ -59,7 +60,7 @@ export default function DebtorsList({
     const unpaidInvoices = cust.invoices ? cust.invoices.filter(inv => inv.debtBalance > 0) : [];
     const invoiceLinks = unpaidInvoices.map(inv => {
       const previewToken = "yb_token_" + inv.id.substring(0, 8);
-      return `${window.location.origin}/receipts/token/${previewToken}/`;
+      return `${getAppBaseUrl()}/receipts/token/${previewToken}/`;
     });
     const linkSuffix = invoiceLinks.length > 0 ? ` View invoice: ${invoiceLinks[0]}` : '';
 
@@ -93,7 +94,7 @@ export default function DebtorsList({
     const unpaidInvoices = cust.invoices ? cust.invoices.filter(inv => inv.debtBalance > 0) : [];
     const invoiceLinks = unpaidInvoices.map(inv => {
       const previewToken = "yb_token_" + inv.id.substring(0, 8);
-      return `${window.location.origin}/receipts/token/${previewToken}/`;
+      return `${getAppBaseUrl()}/receipts/token/${previewToken}/`;
     });
     const invoiceLinksStr = invoiceLinks.length > 0 
       ? `\n\n*View Invoice Ledger${invoiceLinks.length > 1 ? 's' : ''}*:\n${invoiceLinks.map(link => `• ${link}`).join('\n')}` 

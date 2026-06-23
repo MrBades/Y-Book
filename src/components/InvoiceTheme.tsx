@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Invoice, BusinessProfile, Customer } from '../types';
 import { generateInvoicePDF } from '../lib/pdfGenerator';
 import { WhatsAppPayLinkGenerator } from './WhatsAppPayLinkGenerator';
+import { getAppBaseUrl } from '../utils/url';
 
 const SUPPORT_PHONE = import.meta.env.VITE_SUPPORT_PHONE || "+234 802 841 6553";
 import { 
@@ -90,6 +91,7 @@ export default function InvoiceTheme({
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false); // <--- Expansion state
   const [tempPhone, setTempPhone] = useState('');
   const [tempEmail, setTempEmail] = useState('');
+  const [whatsAppMode, setWhatsAppMode] = useState<'notification' | 'pay_link'>('notification');
 
   // NRS Status States
   const [firsClearanceStatus, setFirsClearanceStatus] = useState<'pending' | 'cleared'>('pending');
@@ -107,6 +109,15 @@ export default function InvoiceTheme({
 
   // 3. WHATSAPP TRIGGER INTERCEPT WORKFLOW
   const handleWhatsAppAction = () => {
+    triggerWhatsAppFlow('notification');
+  };
+
+  const handleWhatsAppPayLinkAction = () => {
+    triggerWhatsAppFlow('pay_link');
+  };
+
+  const triggerWhatsAppFlow = (mode: 'notification' | 'pay_link') => {
+    setWhatsAppMode(mode);
     if ((!isLoggedIn || skippedOnboarding) && onRequireSignup) { onRequireSignup(); return; }
     let cleanedPhone = customerPhone.trim();
     if (cleanedPhone.startsWith('0')) {
@@ -120,7 +131,7 @@ export default function InvoiceTheme({
       setTempPhone(cleanedPhone);
       setIsWhatsAppModalOpen(true);
     } else {
-      executeWhatsAppShare(cleanedPhone);
+      executeWhatsAppShare(cleanedPhone, mode);
     }
   };
 
@@ -145,11 +156,11 @@ export default function InvoiceTheme({
     
     // Proceed with share seamlessly
     setTimeout(() => {
-      executeWhatsAppShare(cleanInput);
+      executeWhatsAppShare(cleanInput, whatsAppMode);
     }, 600);
   };
 
-  const executeWhatsAppShare = (phoneNo: string) => {
+  const executeWhatsAppShare = (phoneNo: string, modeOverride?: 'notification' | 'pay_link') => {
     if (onTriggerBackup) {
       onTriggerBackup().catch(() => {});
     }
@@ -158,9 +169,17 @@ export default function InvoiceTheme({
       normalized = '+234' + normalized.slice(1);
     }
     const formattedPhoneNo = normalized.replace(/[^0-9+]/g, '');
-    const previewToken = "yb_token_" + invoice.id.substring(0, 8);
-    const mockPublicUrl = window.location.origin + `/receipts/token/${previewToken}/`;
-    const message = `Hello ${invoice.customerName}, here is your bookkeeping invoice breakdown from ${businessName}. Invoice identifier: YB-2026-${invoice.id.substring(0, 4).toUpperCase()}. Balance Due: ₦${invoice.debtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. You can view the live interactive receipt and ledger online at: ${mockPublicUrl} Expect delivery details soon!`;
+    
+    const activeMode = modeOverride || whatsAppMode;
+    let message = '';
+    if (activeMode === 'pay_link') {
+      message = `Hello ${invoice.customerName}, here is the payment link to verify and settle your outstanding invoice #${invoice.id.substring(0, 8).toUpperCase()} of ₦${invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}.\n\nCustom payment link: ${business.customPaymentLink}`;
+    } else {
+      const previewToken = "yb_token_" + invoice.id.substring(0, 8);
+      const mockPublicUrl = getAppBaseUrl() + `/receipts/token/${previewToken}/`;
+      message = `Hello ${invoice.customerName}, here is your bookkeeping invoice breakdown from ${businessName}. Invoice identifier: YB-2026-${invoice.id.substring(0, 4).toUpperCase()}. Balance Due: ₦${invoice.debtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. You can view the live interactive receipt and ledger online at: ${mockPublicUrl} Expect delivery details soon!`;
+    }
+
     const shareUrl = `https://api.whatsapp.com/send?phone=${formattedPhoneNo}&text=${encodeURIComponent(message)}`;
     window.open(shareUrl, '_blank');
   };
@@ -216,7 +235,7 @@ export default function InvoiceTheme({
     }
 
     const previewToken = "yb_token_" + invoice.id.substring(0, 8);
-    const mockPublicUrl = window.location.origin + `/receipts/token/${previewToken}/`;
+    const mockPublicUrl = getAppBaseUrl() + `/receipts/token/${previewToken}/`;
     
     navigator.clipboard.writeText(mockPublicUrl).then(() => {
       triggerToast("✅ Secure Public Link copied to clipboard!");
@@ -872,7 +891,13 @@ export default function InvoiceTheme({
         </h3>
         <div className="grid grid-cols-2 gap-4">
           
-          <WhatsAppPayLinkGenerator invoice={invoice} businessPhone={phone || SUPPORT_PHONE} />
+          <WhatsAppPayLinkGenerator 
+            invoice={invoice} 
+            customPaymentLink={business.customPaymentLink} 
+            customerPhone={customerPhone}
+            onTriggerModal={handleWhatsAppPayLinkAction}
+            onShare={(phone) => executeWhatsAppShare(phone, 'pay_link')}
+          />
 
           {/* WHATSAPP CARD (Soft Green background) */}
           <button 
@@ -910,7 +935,7 @@ export default function InvoiceTheme({
             <div className="absolute right-4 top-4 text-purple-600 group-hover:scale-105 transition-transform">
               <Link2 className="w-4.5 h-4.5 text-purple-600" />
             </div>
-            <span className="font-bold text-purple-900 block text-xs">Public Link URI</span>
+            <span className="font-bold text-purple-900 block text-xs">Public Link</span>
             <span className="text-[10px] text-purple-600/90 block mt-1 font-mono">
               Copy token security code url
             </span>

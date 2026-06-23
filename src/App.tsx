@@ -10,6 +10,7 @@ import GuestInvoiceGenerator from './components/GuestInvoiceGenerator';
 import LandingPage from './components/LandingPage';
 import AboutPage from './components/AboutPage';
 import TermsPage from './components/TermsPage';
+import PrivacyPage from './components/PrivacyPage';
 import { apiFetch, nodeFetch } from './lib/api';
 import { Customer, Invoice, BusinessProfile, UserState, Product, RestockEvent } from './types';
 import Onboarding from './components/Onboarding';
@@ -819,7 +820,7 @@ export default function App() {
     };
   }, []);
 
-  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal' | 'pricing' | 'reset_pin'>(() => {
+  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'privacy' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal' | 'pricing' | 'reset_pin'>(() => {
     if (window.location.pathname.startsWith('/terminal/')) {
       return 'terminal';
     }
@@ -831,7 +832,7 @@ export default function App() {
     if (screenParam) return screenParam;
 
     const saved = localStorage.getItem('active_screen') as any;
-    const validScreens = ['landing', 'login', 'about', 'terms', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal', 'pricing', 'reset_pin'];
+    const validScreens = ['landing', 'login', 'about', 'terms', 'privacy', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal', 'pricing', 'reset_pin'];
     if (saved && validScreens.includes(saved)) {
       if (saved === 'terminal' || saved === 'reset_pin') return 'landing';
       return saved;
@@ -2380,7 +2381,7 @@ export default function App() {
     if (formattedPhone && formattedPhone.startsWith('0')) {
       formattedPhone = '+234' + formattedPhone.slice(1);
     }
-    setCustomers(prev => prev.map(c => {
+    const nextCustomers = customers.map(c => {
       if (c.id === customerId) {
         return {
           ...c,
@@ -2389,7 +2390,19 @@ export default function App() {
         };
       }
       return c;
-    }));
+    });
+
+    setCustomers(nextCustomers);
+
+    // Save instantly to localStorage to prevent lost writes
+    if (userState.email) {
+      localStorage.setItem(getStorageKey('customers_records'), JSON.stringify(nextCustomers));
+    }
+
+    // Force instant backend sync
+    triggerDailyAutomatedBackup(true, nextCustomers).catch((err) => {
+      console.warn("[BACKUP] Instant post-contact-update sync warning:", err);
+    });
   };
 
   const handleUpdateInvoiceDate = (invoiceId: string, newDateStr: string) => {
@@ -2606,7 +2619,7 @@ export default function App() {
   };
 
   // Permit public navigation screen routes without authenticated sessions
-  const isPublicScreen = ['landing', 'about', 'terms', 'login', 'guest_invoice', 'invoice_preview', 'terminal', 'reset_pin'].includes(activeScreen);
+  const isPublicScreen = ['landing', 'about', 'terms', 'privacy', 'login', 'guest_invoice', 'invoice_preview', 'terminal', 'reset_pin'].includes(activeScreen);
 
   useEffect(() => {
     if (!userState.authenticated && !isPublicScreen) {
@@ -2946,6 +2959,12 @@ export default function App() {
                     className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'terms' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
                   >
                     Terms of Service
+                  </button>
+                  <button
+                    onClick={() => setActiveScreen('privacy')}
+                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'privacy' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                  >
+                    Privacy Policy
                   </button>
                 </nav>
               )}
@@ -3335,6 +3354,17 @@ export default function App() {
                       <span>Terms & Conditions</span>
                     </button>
 
+                    <button
+                      onClick={() => {
+                        setActiveScreen('privacy');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'privacy' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <Lock className="w-4 h-4 text-emerald-400" />
+                      <span>Privacy Policy</span>
+                    </button>
+
                     <div className="border-t border-white/5 my-4 pt-4">
                       <span className="text-[9px] text-amber-400 font-extrabold uppercase tracking-wider block mb-2">Store Workspaces (🔒 Lock)</span>
                     </div>
@@ -3505,6 +3535,18 @@ export default function App() {
                       <span>Terms & Conditions</span>
                     </button>
 
+                    {/* 8. Privacy Policy */}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('privacy');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 rounded-xl flex items-center gap-3 font-medium transition ${activeScreen === 'privacy' ? 'text-[#00A6FF]' : 'hover:text-white text-gray-400'}`}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>Privacy Policy</span>
+                    </button>
+
 
 
                   </>
@@ -3533,6 +3575,10 @@ export default function App() {
 
         {activeScreen === 'terms' && (
           <TermsPage onNavigate={setActiveScreen} isAuthenticated={userState.authenticated} />
+        )}
+
+        {activeScreen === 'privacy' && (
+          <PrivacyPage onNavigate={setActiveScreen} isAuthenticated={userState.authenticated} />
         )}
 
         {activeScreen === 'guest_invoice' && (
@@ -4262,7 +4308,7 @@ export default function App() {
 
         {/* INVENTORY CATALOG AND LOW-STOCK MANAGEMENT */}
         {activeScreen === 'products' && (
-          <div className="space-y-8 animate-fadeIn">
+          <div id="tour-products-section" className="space-y-8 animate-fadeIn">
             <div className="flex items-center justify-between border-b pb-4">
               <div>
                 <h1 className="text-xl font-display font-extrabold text-gray-900 flex items-center gap-2">
@@ -5245,7 +5291,7 @@ export default function App() {
           {/* Middle partition: Quick Nav links */}
           <div className="flex flex-col gap-2 items-center md:items-start">
             <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400">Quick Portal Indices</span>
-            <div className="flex items-center gap-4 text-[11px] justify-center md:justify-start">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] justify-center md:justify-start">
               <button 
                 onClick={() => {
                   setActiveScreen('about');
@@ -5264,6 +5310,16 @@ export default function App() {
                 className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'terms' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
               >
                 Terms of Service
+              </button>
+              <span className="text-white/20 select-none">|</span>
+              <button 
+                onClick={() => {
+                  setActiveScreen('privacy');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }} 
+                className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'privacy' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
+              >
+                Privacy Policy
               </button>
               {currentUserRole === 'owner' && (
                 <>
@@ -5320,13 +5376,13 @@ export default function App() {
         </div>
       )}
       {deferredPrompt && !isAppInstalled && (
-        <div className="fixed bottom-20 right-4 z-[45] animate-bounce">
+        <div className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[100] transform animate-bounce">
           <button
             onClick={handleInstallPWA}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-full shadow-2xl text-xs font-black transition-all border border-emerald-500/30"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-full shadow-lg text-xs font-black transition-all border border-emerald-500/30 whitespace-nowrap"
           >
-            <Smartphone className="w-4 h-4 text-emerald-300 shrink-0" />
-            <span>Install Yeedem Books</span>
+            <Smartphone className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+            <span>Install App</span>
           </button>
         </div>
       )}
