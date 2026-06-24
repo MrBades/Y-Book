@@ -56,14 +56,36 @@ const plans: PricingPlan[] = [
 export default function PricingGrid({ 
   onNavigate, 
   onUpgrade,
-  currentPlan
+  currentPlan,
+  customPrices
 }: { 
   onNavigate: (screen: 'login' | 'about' | 'terms' | 'guest_invoice') => void; 
   onUpgrade: (plan: string, billingCycle: 'monthly' | 'annually', amount: number) => void;
   currentPlan?: string;
+  customPrices?: {
+    growth_monthly: number;
+    growth_annually: number;
+    pro_monthly: number;
+    pro_annually: number;
+    enterprise_monthly: number;
+    enterprise_annually: number;
+  };
 }) {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annually'>('monthly');
   const [confirmPlan, setConfirmPlan] = useState<PricingPlan | null>(null);
+
+  const customPlans = plans.map(p => {
+    if (p.id === 'growth' && customPrices) {
+      return { ...p, monthlyPrice: customPrices.growth_monthly, annualPrice: customPrices.growth_annually };
+    }
+    if (p.id === 'starter_pro' && customPrices) {
+      return { ...p, monthlyPrice: customPrices.pro_monthly, annualPrice: customPrices.pro_annually };
+    }
+    if (p.id === 'enterprise' && customPrices) {
+      return { ...p, monthlyPrice: customPrices.enterprise_monthly, annualPrice: customPrices.enterprise_annually };
+    }
+    return p;
+  });
 
   return (
     <div className="py-12 space-y-8">
@@ -87,7 +109,7 @@ export default function PricingGrid({
 
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {plans.map(plan => {
+        {customPlans.map(plan => {
           const getPlanTier = (planName?: string): number => {
               if (!planName) return 1;
               const lower = planName.toLowerCase();

@@ -70,6 +70,9 @@ import {
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
 import LowStockAlert from './components/LowStockAlert';
+import { safeStorage } from './utils/storage';
+
+const localStorage = safeStorage;
 
 const LogoImg = '/pwa_icon_logo.png';
 
@@ -101,6 +104,29 @@ export default function App() {
   const [simulatedDeviceFp, setSimulatedDeviceFp] = useState('fp_default_owner');
   const [isSuspiciousLocked, setIsSuspiciousLocked] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
+
+  // SaaS pricing plan configurations state
+  const [pricingPlanPrices, setPricingPlanPrices] = useState(() => {
+    const saved = localStorage.getItem('yb_pricing_prices');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      growth_monthly: 4500,
+      growth_annually: 45000,
+      pro_monthly: 7500,
+      pro_annually: 75000,
+      enterprise_monthly: 20000,
+      enterprise_annually: 200000,
+    };
+  });
+
+  const handleUpdatePricingPlanPrices = (updated: typeof pricingPlanPrices) => {
+    setPricingPlanPrices(updated);
+    localStorage.setItem('yb_pricing_prices', JSON.stringify(updated));
+  };
 
   // Suspicious device lock security States
   const [sessionRefreshTrigger, setSessionRefreshTrigger] = useState(0);
@@ -2471,6 +2497,39 @@ export default function App() {
     });
   };
 
+  const handleUpdateInvoiceCurrency = (invoiceId: string, newCurrency: string) => {
+    if (!newCurrency) return;
+    setCustomers(prev => {
+      return prev.map(cust => {
+        const invoiceIdx = cust.invoices.findIndex(inv => inv.id === invoiceId);
+        if (invoiceIdx === -1) return cust;
+
+        const updatedInvoices = [...cust.invoices];
+        const oldInv = updatedInvoices[invoiceIdx];
+        
+        updatedInvoices[invoiceIdx] = {
+          ...oldInv,
+          currency: newCurrency
+        };
+
+        return {
+          ...cust,
+          invoices: updatedInvoices
+        };
+      });
+    });
+
+    setSelectedInvoice(prev => {
+      if (prev && prev.id === invoiceId) {
+        return {
+          ...prev,
+          currency: newCurrency
+        };
+      }
+      return prev;
+    });
+  };
+
   // Invoice Detailed Record Editor
   const handleEditInvoice = (invoiceId: string, updated: Partial<Invoice>) => {
     setCustomers(prev => {
@@ -2836,6 +2895,7 @@ export default function App() {
                 onUpdateCustomerContact={handleUpdateCustomerContact}
                 onUpdateInvoiceDate={handleUpdateInvoiceDate}
                 onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+                onUpdateInvoiceCurrency={handleUpdateInvoiceCurrency}
                 showTax={showTax}
                 isLoggedIn={false}
                 onRequireSignup={() => {}}
@@ -3566,7 +3626,7 @@ export default function App() {
         
         {/* PUBLIC GUEST VIEWPORTS */}
         {activeScreen === 'landing' && (
-          <LandingPage onNavigate={setActiveScreen} onUpgrade={handleUpgradePlan} />
+          <LandingPage onNavigate={setActiveScreen} onUpgrade={handleUpgradePlan} customPrices={pricingPlanPrices} />
         )}
 
         {activeScreen === 'about' && (
@@ -3595,6 +3655,7 @@ export default function App() {
             onNavigate={(screen) => setActiveScreen(screen as any)} 
             onUpgrade={handleUpgradePlan}
             currentPlan={userState.subscriptionPlan}
+            customPrices={pricingPlanPrices}
           />
         )}
 
@@ -4772,6 +4833,8 @@ export default function App() {
                     localStorage.setItem(storageKey, JSON.stringify(newProducts));
                   }}
                   userEmail={userState.email || ''}
+                  pricingPlanPrices={pricingPlanPrices}
+                  onUpdatePricingPlanPrices={handleUpdatePricingPlanPrices}
                 />
               </div>
             )}
@@ -5158,6 +5221,7 @@ export default function App() {
               onUpdateCustomerContact={handleUpdateCustomerContact}
               onUpdateInvoiceDate={handleUpdateInvoiceDate}
               onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+              onUpdateInvoiceCurrency={handleUpdateInvoiceCurrency}
               showTax={showTax}
               isLoggedIn={userState.authenticated}
               onRequireSignup={() => setShowOnboardingModal(true)}

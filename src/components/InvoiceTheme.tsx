@@ -28,6 +28,7 @@ interface InvoiceThemeProps {
   onUpdateCustomerContact?: (customerId: string, phone?: string, email?: string) => void;
   onUpdateInvoiceDate?: (invoiceId: string, newDate: string) => void;
   onUpdateInvoiceStatus?: (invoiceId: string, status: 'DRAFT' | 'PAID' | 'OVERDUE') => void;
+  onUpdateInvoiceCurrency?: (invoiceId: string, currency: string) => void;
   showTax?: boolean;
   isLoggedIn?: boolean;
   onRequireSignup?: () => void;
@@ -43,6 +44,7 @@ export default function InvoiceTheme({
   onUpdateCustomerContact,
   onUpdateInvoiceDate: rawOnUpdateInvoiceDate,
   onUpdateInvoiceStatus: rawOnUpdateInvoiceStatus,
+  onUpdateInvoiceCurrency: rawOnUpdateInvoiceCurrency,
   showTax = false,
   isLoggedIn: rawIsLoggedIn = true,
   onRequireSignup,
@@ -52,7 +54,9 @@ export default function InvoiceTheme({
 }: InvoiceThemeProps) {
   const onUpdateInvoiceDate = isSharedPublicView ? undefined : rawOnUpdateInvoiceDate;
   const onUpdateInvoiceStatus = isSharedPublicView ? undefined : rawOnUpdateInvoiceStatus;
+  const onUpdateInvoiceCurrency = isSharedPublicView ? undefined : rawOnUpdateInvoiceCurrency;
   const isLoggedIn = isSharedPublicView ? true : rawIsLoggedIn;
+  const currencySymbol = (invoice as any).currency || '₦';
 
   const { businessName, address, phone, invoiceTemplatePreference, businessLogo, logoWidth, logoHeight, logoRotation, headerRotation } = business;
   const isService = business?.businessType === 'service';
@@ -173,11 +177,11 @@ export default function InvoiceTheme({
     const activeMode = modeOverride || whatsAppMode;
     let message = '';
     if (activeMode === 'pay_link') {
-      message = `Hello ${invoice.customerName}, here is the payment link to verify and settle your outstanding invoice #${invoice.id.substring(0, 8).toUpperCase()} of ₦${invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}.\n\nCustom payment link: ${business.customPaymentLink}`;
+      message = `Hello ${invoice.customerName}, here is the payment link to verify and settle your outstanding invoice #${invoice.id.substring(0, 8).toUpperCase()} of ${currencySymbol}${invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}.\n\nCustom payment link: ${business.customPaymentLink}`;
     } else {
       const previewToken = "yb_token_" + invoice.id.substring(0, 8);
       const mockPublicUrl = getAppBaseUrl() + `/receipts/token/${previewToken}/`;
-      message = `Hello ${invoice.customerName}, here is your bookkeeping invoice breakdown from ${businessName}. Invoice identifier: YB-2026-${invoice.id.substring(0, 4).toUpperCase()}. Balance Due: ₦${invoice.debtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. You can view the live interactive receipt and ledger online at: ${mockPublicUrl} Expect delivery details soon!`;
+      message = `Hello ${invoice.customerName}, here is your bookkeeping invoice breakdown from ${businessName}. Invoice identifier: YB-2026-${invoice.id.substring(0, 4).toUpperCase()}. Balance Due: ${currencySymbol}${invoice.debtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. You can view the live interactive receipt and ledger online at: ${mockPublicUrl} Expect delivery details soon!`;
     }
 
     const shareUrl = `https://api.whatsapp.com/send?phone=${formattedPhoneNo}&text=${encodeURIComponent(message)}`;
@@ -220,7 +224,7 @@ export default function InvoiceTheme({
 
   const executeEmailShare = (emailAddress: string) => {
     const subject = `Tax Invoice Breakdown - Yeedem Books - #${invoice.id.substring(0,8).toUpperCase()}`;
-    const mailBody = `Hello ${invoice.customerName},\n\nPlease find the transaction receipt and digital ledger breakdown from ${businessName}:\n\nInvoice: YB-2026-${invoice.id.substring(0,4).toUpperCase()}\nAmount Invoiced: ₦${invoice.totalAmount.toLocaleString()}\nRepaid Deposit: ₦${invoice.amountPaid.toLocaleString()}\nLedger Due Credit: ₦${invoice.debtBalance.toLocaleString()}\n\nThank you for choosing Yeedem Books. This document acts as an official trade journal entry.`;
+    const mailBody = `Hello ${invoice.customerName},\n\nPlease find the transaction receipt and digital ledger breakdown from ${businessName}:\n\nInvoice: YB-2026-${invoice.id.substring(0,4).toUpperCase()}\nAmount Invoiced: ${currencySymbol}${invoice.totalAmount.toLocaleString()}\nRepaid Deposit: ${currencySymbol}${invoice.amountPaid.toLocaleString()}\nLedger Due Credit: ${currencySymbol}${invoice.debtBalance.toLocaleString()}\n\nThank you for choosing Yeedem Books. This document acts as an official trade journal entry.`;
     window.location.href = `mailto:${emailAddress}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
   };
 
@@ -335,14 +339,14 @@ export default function InvoiceTheme({
                 <tr key={index} className="border-b border-gray-300">
                   <td className="py-2 text-left font-semibold">{itm.name}</td>
                   <td className="py-2 text-center font-mono">{itm.quantity}</td>
-                  <td className="py-2 text-right font-mono font-bold">₦{itm.total.toLocaleString()}</td>
+                  <td className="py-2 text-right font-mono font-bold">{currencySymbol}{itm.total.toLocaleString()}</td>
                 </tr>
               ))
             ) : (
               <tr className="border-b border-gray-300">
                 <td className="py-2 text-left font-semibold">{invoice.productName}</td>
                 <td className="py-2 text-center font-mono">1</td>
-                <td className="py-2 text-right font-mono font-bold">₦{invoice.totalAmount.toLocaleString()}</td>
+                <td className="py-2 text-right font-mono font-bold">{currencySymbol}{invoice.totalAmount.toLocaleString()}</td>
               </tr>
             )}
           </tbody>
@@ -357,21 +361,21 @@ export default function InvoiceTheme({
         <div className="w-1/2 space-y-1 text-right font-mono">
           <div className="flex justify-between">
             <span className="font-serif">TOTAL:</span>
-            <span>₦{finalInvoiced.toLocaleString()}</span>
+            <span>{currencySymbol}{finalInvoiced.toLocaleString()}</span>
           </div>
           {showTax && (
             <div className="flex justify-between font-semibold text-gray-500">
               <span className="font-serif">INCLUDES 7.5% VAT:</span>
-              <span>₦{taxAmount.toLocaleString()}</span>
+              <span>{currencySymbol}{taxAmount.toLocaleString()}</span>
             </div>
           )}
           <div className="flex justify-between text-gray-750">
             <span className="font-serif">CASH RECOV:</span>
-            <span>₦{invoice.amountPaid.toLocaleString()}</span>
+            <span>{currencySymbol}{invoice.amountPaid.toLocaleString()}</span>
           </div>
           <div className="flex justify-between font-bold border-t border-black pt-1 block text-sm">
             <span className="font-serif">DUE CREDIT:</span>
-            <span>₦{finalDebtBalance.toLocaleString()}</span>
+            <span>{currencySymbol}{finalDebtBalance.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -468,7 +472,7 @@ export default function InvoiceTheme({
         <div className="bg-gray-50 rounded-2xl p-4">
           <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider">Outstanding</span>
           <p className={`text-sm font-bold mt-1 ${invoice.debtBalance > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-            ₦{invoice.debtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}
+            {currencySymbol}{invoice.debtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}
           </p>
           <span className="text-[10px] text-gray-400 block mt-0.5">Balance due to merchant</span>
         </div>
@@ -491,16 +495,16 @@ export default function InvoiceTheme({
                 <tr key={index} className="font-medium hover:bg-blue-50/20 transition-colors">
                   <td className="py-4 px-2 text-gray-900 font-semibold">{itm.name}</td>
                   <td className="py-4 text-center text-gray-600 font-mono">{itm.quantity}</td>
-                  <td className="py-4 text-right text-gray-600 font-mono">₦{itm.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td className="py-4 text-right pr-2 text-gray-900 font-bold font-mono">₦{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="py-4 text-right text-gray-600 font-mono">{currencySymbol}{itm.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="py-4 text-right pr-2 text-gray-900 font-bold font-mono">{currencySymbol}{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>
               ))
             ) : (
               <tr className="font-medium bg-gray-50/30">
                 <td className="py-4 px-2 text-gray-900 font-semibold">{invoice.productName}</td>
                 <td className="py-4 text-center text-gray-600">1</td>
-                <td className="py-4 text-right text-gray-600">₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                <td className="py-4 text-right pr-2 text-gray-900 font-bold font-mono">₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="py-4 text-right text-gray-600">{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td className="py-4 text-right pr-2 text-gray-900 font-bold font-mono">{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
               </tr>
             )}
           </tbody>
@@ -516,27 +520,27 @@ export default function InvoiceTheme({
         <div className="w-1/2 space-y-2 text-xs">
           <div className="flex justify-between text-gray-500 font-medium">
             <span>Subtotal:</span>
-            <span>₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
           {showTax && (
             <div className="flex justify-between text-gray-500 font-medium">
               <span>VAT (7.5%):</span>
-              <span>₦{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span>{currencySymbol}{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
           )}
           {showTax && (
             <div className="flex justify-between text-gray-900 font-bold border-t pt-1 mt-1">
               <span>Total Invoiced:</span>
-              <span>₦{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span>{currencySymbol}{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
           )}
           <div className="flex justify-between text-gray-500 font-medium pt-1">
             <span>Amount Deposited:</span>
-            <span>₦{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
           <div className="flex justify-between text-md font-bold text-blue-900 pt-2 border-t mt-1">
             <span>Outstanding Balance due:</span>
-            <span>₦{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
         </div>
       </div>
@@ -586,13 +590,13 @@ export default function InvoiceTheme({
           invoice.items.map((itm, idx) => (
             <div key={idx} className="flex justify-between text-gray-600 text-[11px]">
               <span>{itm.name} x{itm.quantity}</span>
-              <span>₦{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span>{currencySymbol}{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
           ))
         ) : (
           <div className="flex justify-between text-gray-600 text-[11px]">
             <span>{invoice.productName} x1</span>
-            <span>₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
         )}
       </div>
@@ -601,27 +605,27 @@ export default function InvoiceTheme({
       <div className={`bg-white/50 p-2.5 rounded-xl pt-3 text-[11px] space-y-1 shadow-xs ${!isLoggedIn ? 'guest-blur' : ''}`}>
         <div className="flex justify-between">
           <span>TX SUBTOTAL:</span>
-          <span>₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+          <span>{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
         </div>
         {showTax && (
           <div className="flex justify-between">
             <span>VAT (7.5%):</span>
-            <span>₦{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
         )}
         {showTax && (
           <div className="flex justify-between font-bold border-t border-black/10 pt-1 mt-1">
             <span>TX TOTAL:</span>
-            <span>₦{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+            <span>{currencySymbol}{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
           </div>
         )}
         <div className="flex justify-between text-emerald-600 font-semibold pt-1">
           <span>CASH PAID:</span>
-          <span>₦{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+          <span>{currencySymbol}{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
         </div>
         <div className="flex justify-between text-red-500 font-bold bg-amber-100/40 p-1.5 rounded-lg text-xs mt-1">
           <span>CREDIT BALANCE:</span>
-          <span>₦{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+          <span>{currencySymbol}{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
         </div>
       </div>
 
@@ -784,16 +788,16 @@ export default function InvoiceTheme({
                   <tr key={index} className="font-medium hover:bg-gray-50/20 transition-colors" style={{ color: tableStyle.textColor }}>
                     <td className="py-3 px-2 font-semibold text-left">{itm.name}</td>
                     <td className="py-3 text-center font-mono">{itm.quantity}</td>
-                    <td className="py-1.5 text-right font-mono">₦{itm.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="py-1.5 text-right pr-2 font-bold font-mono">₦{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="py-1.5 text-right font-mono">{currencySymbol}{itm.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td className="py-1.5 text-right pr-2 font-bold font-mono">{currencySymbol}{itm.total.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                   </tr>
                 ))
               ) : (
                 <tr className="font-medium bg-gray-50/10" style={{ color: tableStyle.textColor }}>
                   <td className="py-3 px-2 font-semibold text-left">{invoice.productName}</td>
                   <td className="py-3 text-center">1</td>
-                  <td className="py-3 text-right">₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                  <td className="py-3 text-right pr-2 font-bold font-mono">₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="py-3 text-right">{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td className="py-3 text-right pr-2 font-bold font-mono">{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 </tr>
               )}
             </tbody>
@@ -812,27 +816,27 @@ export default function InvoiceTheme({
           <div className="w-1/2 space-y-1.5">
             <div className="flex justify-between opacity-80">
               <span className="font-semibold font-sans">Subtotal:</span>
-              <span className="font-mono">₦{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span className="font-mono">{currencySymbol}{invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
             {showTax && (
               <div className="flex justify-between opacity-80">
                 <span className="font-semibold font-sans">VAT (7.5%):</span>
-                <span className="font-mono">₦{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                <span className="font-mono">{currencySymbol}{taxAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
             )}
             {showTax && (
               <div className="flex justify-between opacity-95 pt-1 mt-1" style={{ borderTop: `1px solid ${footerStyle.textColor}20` }}>
                 <span className="font-bold font-sans">Total Invoiced:</span>
-                <span className="font-mono font-bold">₦{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                <span className="font-mono font-bold">{currencySymbol}{finalInvoiced.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
             )}
             <div className="flex justify-between text-emerald-600 mt-1">
               <span className="font-semibold font-sans text-emerald-700">Total Deposited:</span>
-              <span className="font-mono">₦{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span className="font-mono">{currencySymbol}{invoice.amountPaid.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
             <div className="flex justify-between font-extrabold pt-2 mt-1" style={{ borderTop: `1px solid ${footerStyle.textColor}20` }}>
               <span className="font-sans" style={{ color: accentColor }}>Outstanding Debt:</span>
-              <span className="font-mono" style={{ color: accentColor }}>₦{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              <span className="font-mono" style={{ color: accentColor }}>{currencySymbol}{finalDebtBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
             </div>
           </div>
         </div>
@@ -988,6 +992,34 @@ export default function InvoiceTheme({
               firs_code: {firsCode}
             </span>
           )}
+        </div>
+
+        {/* INVOICE CURRENCY SELECTOR */}
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-gray-400 tracking-wider">INVOICE CURRENCY:</span>
+            <select
+              value={currencySymbol}
+              onChange={(e) => {
+                if (onUpdateInvoiceCurrency) {
+                  onUpdateInvoiceCurrency(invoice.id, e.target.value);
+                  triggerToast(`Currency changed to ${e.target.value}`);
+                }
+              }}
+              className="text-[10px] font-semibold bg-gray-50 border border-gray-200 p-1 px-2 rounded-lg cursor-pointer uppercase font-mono text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
+            >
+              <option value="₦">₦ Naira (NGN)</option>
+              <option value="$">$ Dollar (USD)</option>
+              <option value="€">€ Euro (EUR)</option>
+              <option value="£">£ Pound (GBP)</option>
+              <option value="₵">₵ Cedi (GHS)</option>
+              <option value="Ksh">Ksh Shilling (KES)</option>
+              <option value="FRw">FRw Franc (RWF)</option>
+            </select>
+          </div>
+          <span className="text-[9px] font-mono text-gray-405">
+            Per-invoice currency control
+          </span>
         </div>
 
         {/* PAYMENT HEALTH CARD AT BASE */}

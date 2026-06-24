@@ -3,6 +3,8 @@
  * Allows developers to update base URLs in one place.
  */
 
+import { safeStorage } from '../utils/storage';
+
 export const SYSTEM_API_BASE_URL = '';
 
 export const API_ENDPOINTS = {
@@ -55,8 +57,8 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
       console.warn("Unauthorized API call, clearing session and reloading:", path);
-      localStorage.removeItem('session_id');
-      localStorage.removeItem('active_screen');
+      safeStorage.removeItem('session_id');
+      safeStorage.removeItem('active_screen');
       window.location.reload();
       return res;
     }
@@ -81,8 +83,8 @@ export async function nodeFetch(path: string, options?: RequestInit): Promise<Re
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
         console.warn("Unauthorized nodeFetch call, clearing session and reloading:", path);
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('active_screen');
+        safeStorage.removeItem('session_id');
+        safeStorage.removeItem('active_screen');
         window.location.reload();
         return res;
     }
@@ -107,8 +109,8 @@ export async function systemFetch(path: string, options?: RequestInit): Promise<
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
         console.warn("Unauthorized systemFetch call, clearing session and reloading:", path);
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('active_screen');
+        safeStorage.removeItem('session_id');
+        safeStorage.removeItem('active_screen');
         window.location.reload();
         return res;
     }

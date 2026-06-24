@@ -42,6 +42,20 @@ export function generateInvoicePDF(
 
   const { phone: customerPhone, email: customerEmail } = findCustomerContact(customers, invoice.customerName);
 
+  const getCurrencyLabel = (symbol: string = '₦') => {
+    switch (symbol) {
+      case '₦': return 'NGN ';
+      case '$': return 'USD ';
+      case '€': return 'EUR ';
+      case '£': return 'GBP ';
+      case '₵': return 'GHS ';
+      case 'Ksh': return 'KES ';
+      case 'FRw': return 'RWF ';
+      default: return symbol + ' ';
+    }
+  };
+  const currencyLabel = getCurrencyLabel((invoice as any).currency || '₦');
+
   const taxAmount = showTax ? invoice.totalAmount * 0.075 : 0;
   const finalInvoiced = invoice.totalAmount + taxAmount;
   const finalDebtBalance = Math.max(0, finalInvoiced - invoice.amountPaid);
@@ -211,7 +225,7 @@ export function generateInvoicePDF(
 
         doc.setFont("Courier", "normal");
         doc.text(itm.quantity.toString(), 310, startY, { align: 'center' });
-        doc.text("NGN " + itm.total.toLocaleString(), 545, startY, { align: 'right' });
+        doc.text(currencyLabel + itm.total.toLocaleString(), 545, startY, { align: 'right' });
 
         doc.setLineWidth(0.5);
         doc.setDrawColor(200, 200, 200);
@@ -224,7 +238,7 @@ export function generateInvoicePDF(
 
       doc.setFont("Courier", "normal");
       doc.text("1", 310, startY, { align: 'center' });
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), 545, startY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), 545, startY, { align: 'right' });
 
       doc.setLineWidth(0.5);
       doc.setDrawColor(200, 200, 200);
@@ -252,21 +266,21 @@ export function generateInvoicePDF(
     // Math outputs aligned with layout screenshot
     doc.text("TOTAL:", 380, summaryY);
     doc.setFont("Courier", "bold");
-    doc.text("NGN " + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, summaryY, { align: 'right' });
+    doc.text(currencyLabel + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, summaryY, { align: 'right' });
 
     let currentY = summaryY + 14;
     if (showTax) {
       doc.setFont("Times", "normal");
       doc.text("INCLUDES 7.5% VAT:", 380, currentY);
       doc.setFont("Courier", "normal");
-      doc.text("NGN " + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
+      doc.text(currencyLabel + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
       currentY += 14;
     }
 
     doc.setFont("Times", "normal");
     doc.text("CASH RECOV:", 380, currentY);
     doc.setFont("Courier", "normal");
-    doc.text("NGN " + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
+    doc.text(currencyLabel + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
     currentY += 8;
 
     // Single dividing line before deep debt credit state
@@ -277,7 +291,7 @@ export function generateInvoicePDF(
     doc.setFont("Times", "bold");
     doc.text("DUE CREDIT:", 380, currentY);
     doc.setFont("Courier", "bold");
-    doc.text("NGN " + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
+    doc.text(currencyLabel + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 545, currentY, { align: 'right' });
 
     // Double bottom black line block at base of boundary card
     doc.setLineWidth(2.5);
@@ -370,18 +384,18 @@ export function generateInvoicePDF(
       invoice.items.forEach((itm) => {
         doc.text(itm.name, 50, startY);
         doc.text(itm.quantity.toString(), 310, startY, { align: 'center' });
-        doc.text("NGN " + itm.price.toLocaleString(), 420, startY, { align: 'right' });
+        doc.text(currencyLabel + itm.price.toLocaleString(), 420, startY, { align: 'right' });
         doc.setFont("Helvetica", "bold");
-        doc.text("NGN " + itm.total.toLocaleString(), 535, startY, { align: 'right' });
+        doc.text(currencyLabel + itm.total.toLocaleString(), 535, startY, { align: 'right' });
         doc.setFont("Helvetica", "normal");
         startY += 20;
       });
     } else {
       doc.text(invoice.productName || "General Goods Commodities", 50, startY);
       doc.text("1", 310, startY, { align: 'center' });
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), 420, startY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), 420, startY, { align: 'right' });
       doc.setFont("Helvetica", "bold");
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), 535, startY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), 535, startY, { align: 'right' });
       doc.setFont("Helvetica", "normal");
       startY += 20;
     }
@@ -392,32 +406,32 @@ export function generateInvoicePDF(
     const endY = startY + 30;
     doc.setFont("Helvetica", "normal");
     doc.text("Ledger Subtotal Due:", 350, endY);
-    doc.text("NGN " + invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, endY, { align: 'right' });
+    doc.text(currencyLabel + invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, endY, { align: 'right' });
 
     let currentOffsetY = endY + 16;
 
     if (showTax) {
       doc.text("VAT (7.5%):", 350, currentOffsetY);
-      doc.text("NGN " + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
       currentOffsetY += 16;
 
       doc.setFont("Helvetica", "bold");
       doc.text("Total Invoiced:", 350, currentOffsetY);
-      doc.text("NGN " + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
       doc.setFont("Helvetica", "normal");
       currentOffsetY += 16;
     }
 
     doc.setTextColor(16, 185, 129);
     doc.text("Cash Paid / Deposits:", 350, currentOffsetY);
-    doc.text("NGN " + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+    doc.text(currencyLabel + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
 
     doc.line(350, currentOffsetY + 8, 565, currentOffsetY + 8);
 
     doc.setTextColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
     doc.setFont("Helvetica", "bold");
     doc.text("Outstanding Debt Due:", 350, currentOffsetY + 22);
-    doc.text("NGN " + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY + 22, { align: 'right' });
+    doc.text(currencyLabel + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY + 22, { align: 'right' });
 
     // Custom terms/notes
     doc.setTextColor(110, 110, 110);
@@ -477,12 +491,12 @@ export function generateInvoicePDF(
     if (invoice.items && invoice.items.length > 0) {
       invoice.items.forEach(itm => {
         doc.text(`${itm.name.substring(0, 22)} x${itm.quantity}`, lX, itemY);
-        doc.text("NGN " + itm.total.toLocaleString(), rX, itemY, { align: 'right' });
+        doc.text(currencyLabel + itm.total.toLocaleString(), rX, itemY, { align: 'right' });
         itemY += 15;
       });
     } else {
       doc.text(`${(invoice.productName || "General Goods").substring(0, 22)} x1`, lX, itemY);
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), rX, itemY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), rX, itemY, { align: 'right' });
       itemY += 15;
     }
 
@@ -491,30 +505,30 @@ export function generateInvoicePDF(
     let currentOffsetY = itemY + 20;
 
     doc.text(`BILL SUM:`, lX, currentOffsetY);
-    doc.text("NGN " + invoice.totalAmount.toLocaleString(), rX, currentOffsetY, { align: 'right' });
+    doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), rX, currentOffsetY, { align: 'right' });
 
     if (showTax) {
       currentOffsetY += 14;
       doc.text(`VAT TALLY:`, lX, currentOffsetY);
-      doc.text("NGN " + taxAmount.toLocaleString(), rX, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + taxAmount.toLocaleString(), rX, currentOffsetY, { align: 'right' });
 
       currentOffsetY += 14;
       doc.setFont("Courier", "bold");
       doc.text(`NET TOTAL:`, lX, currentOffsetY);
-      doc.text("NGN " + finalInvoiced.toLocaleString(), rX, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + finalInvoiced.toLocaleString(), rX, currentOffsetY, { align: 'right' });
       doc.setFont("Courier", "normal");
     }
 
     currentOffsetY += 14;
     doc.setTextColor(16, 185, 129);
     doc.text(`CASH RECOV:`, lX, currentOffsetY);
-    doc.text("NGN " + invoice.amountPaid.toLocaleString(), rX, currentOffsetY, { align: 'right' });
+    doc.text(currencyLabel + invoice.amountPaid.toLocaleString(), rX, currentOffsetY, { align: 'right' });
 
     currentOffsetY += 16;
     doc.setTextColor(239, 68, 68);
     doc.setFont("Courier", "bold");
     doc.text(`LEDGER BALANCE:`, lX, currentOffsetY);
-    doc.text("NGN " + finalDebtBalance.toLocaleString(), rX, currentOffsetY, { align: 'right' });
+    doc.text(currencyLabel + finalDebtBalance.toLocaleString(), rX, currentOffsetY, { align: 'right' });
 
     // footer compact
     doc.setTextColor(100, 100, 100);
@@ -667,21 +681,21 @@ export function generateInvoicePDF(
         applySectionStyleHelper(tableStyle, 10, 'normal');
         doc.text(itm.name, 50, startY);
         doc.text(itm.quantity.toString(), 310, startY, { align: 'center' });
-        doc.text("NGN " + itm.price.toLocaleString(), 420, startY, { align: 'right' });
+        doc.text(currencyLabel + itm.price.toLocaleString(), 420, startY, { align: 'right' });
         
         // Emphasize the row sum in bold table styling
         doc.setFont(activeFont, "bold");
-        doc.text("NGN " + itm.total.toLocaleString(), 535, startY, { align: 'right' });
+        doc.text(currencyLabel + itm.total.toLocaleString(), 535, startY, { align: 'right' });
         startY += rowGap;
       });
     } else {
       applySectionStyleHelper(tableStyle, 10, 'normal');
       doc.text(invoice.productName || "General Goods Outflow", 50, startY);
       doc.text("1", 310, startY, { align: 'center' });
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), 420, startY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), 420, startY, { align: 'right' });
       
       doc.setFont(activeFont, "bold");
-      doc.text("NGN " + invoice.totalAmount.toLocaleString(), 535, startY, { align: 'right' });
+      doc.text(currencyLabel + invoice.totalAmount.toLocaleString(), 535, startY, { align: 'right' });
       startY += rowGap;
     }
 
@@ -693,24 +707,24 @@ export function generateInvoicePDF(
     // Total numbers panel utilizes custom footer style
     applySectionStyleHelper(footerStyle, 9.5, 'normal');
     doc.text("Gross Invoice Subtotal:", 350, endY);
-    doc.text("NGN " + invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, endY, { align: 'right' });
+    doc.text(currencyLabel + invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, endY, { align: 'right' });
 
     let currentOffsetY = endY + 16;
     if (showTax) {
       doc.text("VAT (7.5%):", 350, currentOffsetY);
-      doc.text("NGN " + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + taxAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
       currentOffsetY += 16;
 
       doc.setFont(activeFont, "bold");
       doc.text("Total Invoiced:", 350, currentOffsetY);
-      doc.text("NGN " + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+      doc.text(currencyLabel + finalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
       applySectionStyleHelper(footerStyle, 9.5, 'normal');
       currentOffsetY += 16;
     }
 
     doc.setTextColor(16, 185, 129);
     doc.text("Amount Cleared Deposits:", 350, currentOffsetY);
-    doc.text("NGN " + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
+    doc.text(currencyLabel + invoice.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY, { align: 'right' });
 
     doc.line(350, currentOffsetY + 8, 565, currentOffsetY + 8);
 
@@ -718,7 +732,7 @@ export function generateInvoicePDF(
     doc.setTextColor(rgbAccent.r, rgbAccent.g, rgbAccent.b);
     doc.setFont(activeFont, "bold");
     doc.text("Ledger Credit Owed:", 350, currentOffsetY + 22);
-    doc.text("NGN " + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY + 22, { align: 'right' });
+    doc.text(currencyLabel + finalDebtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 }), 535, currentOffsetY + 22, { align: 'right' });
 
     // Custom footer remarks text block styled section
     applySectionStyleHelper(footerStyle, 8, 'normal');

@@ -392,6 +392,7 @@ export default function SmartWidget({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   // Monitor network online/offline state
   useEffect(() => {
@@ -401,13 +402,13 @@ export default function SmartWidget({
 
     const handleOffline = () => {
       setIsOnline(false);
-      setActiveTab('manual'); // Slides over to Manual tab immediately!
+      setActiveTab('parser_or_offline'); // Slides over to Fuse/Offline tab immediately!
     };
 
     // Update initial state
     setIsOnline(navigator.onLine);
     if (!navigator.onLine) {
-      setActiveTab('manual');
+      setActiveTab('parser_or_offline');
     }
 
     window.addEventListener('online', handleOnline);
@@ -439,30 +440,78 @@ export default function SmartWidget({
   // Browser Audio recording API setup
   const handleStartRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      mediaRecorderRef.current = mediaRecorder;
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorderRef.current = mediaRecorder;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setRecordedVoiceBlob(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
-      };
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setRecordedVoiceBlob(audioBlob);
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+        };
 
-      mediaRecorder.start();
+        mediaRecorder.start();
+      } catch (mediaErr) {
+        console.warn("MediaRecorder audio stream capture failed or not supported, proceeding with Web Speech API transcription:", mediaErr);
+      }
+
       setIsRecording(true);
       setRecordingDuration(0);
 
       timerRef.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
+
+      // Web Speech API SpeechRecognition for live local offline-fallback transcription
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+
+        rec.onresult = (event: any) => {
+          let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            }
+          }
+          if (finalTranscript) {
+            setText((prev) => {
+              const trimmedPrev = prev.trim();
+              return trimmedPrev ? `${trimmedPrev} ${finalTranscript.trim()}` : finalTranscript.trim();
+            });
+          }
+        };
+
+        rec.onerror = (errEvent: any) => {
+          console.warn("Speech recognition error:", errEvent.error);
+        };
+
+        rec.onend = () => {
+          // Keep recognition alive while recording is active
+          if (mediaRecorderRef.current && isRecording && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (err) {}
+          }
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
+      }
 
     } catch (err: any) {
       alert("Microphone capture disabled or blocked: " + err.message);
@@ -472,9 +521,15 @@ export default function SmartWidget({
   const handleStopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
     }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+    clearInterval(timerRef.current);
   };
 
   const handleRemoveVoice = () => {
@@ -696,9 +751,14 @@ export default function SmartWidget({
       <div className="p-6">
         {/* Helper Online/Offline Diagnostic Alert */}
         {!isOnline && (
-          <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex items-center gap-2.5 text-xs animate-fadeIn">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span><strong>Device Offline Protection:</strong> Multimodal Voice and Snapshot extraction is temporarily disabled. Active input has been locked to the classic manual structured form backup.</span>
+          <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex flex-col gap-1 text-xs animate-fadeIn shadow-sm">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+              <strong className="text-amber-900">Device Offline Mode Active</strong>
+            </div>
+            <p className="text-gray-650 text-[11px] leading-relaxed pl-6">
+              Multimodal Cloud extraction is offline. However, <strong>native voice dictation (Web Speech API)</strong> and the <strong>local "fuse" offline parser</strong> are fully operational! Press the microphone to dictate your transaction details, and click "Save Ledger" to process everything offline.
+            </p>
           </div>
         )}
 
