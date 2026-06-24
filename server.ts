@@ -485,7 +485,7 @@ app.get("/api/auth/google", (req, res) => {
             `client_id=${clientId}` +
             `&redirect_uri=${encodeURIComponent(redirectUri)}` +
             `&response_type=code` +
-            `&scope=${encodeURIComponent("openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/contacts.readonly")}` +
+            `&scope=${encodeURIComponent("openid email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email")}` +
             `&state=google_auth_state_yeedem` +
             `&prompt=select_account`;
             
@@ -2002,6 +2002,38 @@ const requireSystemAdmin = (req: any, res: any, next: any) => {
     next();
 };
 
+app.get("/api/admin/pricing-prices", (req, res) => {
+    try {
+        const db = readDB();
+        const prices = db.pricingPlanPrices || {
+            growth_monthly: 4500,
+            growth_annually: 45000,
+            pro_monthly: 7500,
+            pro_annually: 75000,
+            enterprise_monthly: 20000,
+            enterprise_annually: 200000,
+        };
+        res.json(prices);
+    } catch (err: any) {
+        res.status(500).json({ error: "Failed to load pricing prices" });
+    }
+});
+
+app.post("/api/admin/pricing-prices", requireSystemAdmin, (req, res) => {
+    try {
+        const { prices } = req.body;
+        if (!prices || typeof prices !== "object") {
+            return res.status(400).json({ error: "Invalid prices payload" });
+        }
+        const db = readDB();
+        db.pricingPlanPrices = prices;
+        writeDB(db);
+        res.json({ status: "success", prices });
+    } catch (err: any) {
+        res.status(500).json({ error: "Failed to persist pricing prices" });
+    }
+});
+
 // Admin UI Page
 app.get(['/admin', '/admin-cpanel'], (req, res) => {
     const defaultPassword = process.env.ADMIN_PASSWORD || 'yeedem_admin_cpanel_2026';
@@ -2158,6 +2190,9 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             <button onclick="setTab('rawdb')" id="tab-rawdb" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="file-json" class="w-3.5 h-3.5"></i> raw db.json
             </button>
+            <button onclick="setTab('pricing')" id="tab-pricing" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
+                <i data-lucide="coins" class="w-3.5 h-3.5"></i> SaaS Pricing Plans
+            </button>
         </div>
 
         <!-- Tab Content Viewport -->
@@ -2281,6 +2316,74 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                 
                 <div class="flex-1 bg-[#0b0c15] border border-blue-500/10 rounded-2xl overflow-hidden flex flex-col p-3 sm:p-4 shadow-2xl mini-scrollbar font-mono text-xs">
                     <textarea id="raw-db-textarea" class="w-full flex-1 bg-transparent text-emerald-400 border-none outline-none resize-none animate-none h-[400px] sm:h-[500px]" style="min-height: 300px;"></textarea>
+                </div>
+            </div>
+
+            <!-- Pricing Tab -->
+            <div id="view-pricing" class="space-y-4 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <div>
+                        <h2 class="text-sm font-black text-white">SaaS Pricing Plans Management</h2>
+                        <p class="text-[11px] text-gray-400 mt-0.5">Manage subscription tier prices (₦) updated dynamically across all landing and user billing views.</p>
+                    </div>
+                    <button onclick="savePricingPrices()" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-lg transition-all">
+                        <i data-lucide="save" class="w-4 h-4"></i> Save Pricing Updates
+                    </button>
+                </div>
+
+                <div class="bg-[#111329] border border-blue-500/10 rounded-2xl p-6 shadow-xl space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Growth Plan -->
+                        <div class="bg-[#0b0c15] p-5 rounded-xl border border-blue-500/5 space-y-4">
+                            <h3 class="text-xs font-black text-[#00A6FF] uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                <i data-lucide="trending-up" class="w-4 h-4"></i> Growth Plan
+                            </h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Monthly Fee (₦)</label>
+                                    <input type="number" id="price-growth-monthly" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Annual Fee (₦)</label>
+                                    <input type="number" id="price-growth-annually" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pro Plan -->
+                        <div class="bg-[#0b0c15] p-5 rounded-xl border border-blue-500/5 space-y-4">
+                            <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                <i data-lucide="zap" class="w-4 h-4"></i> Pro Plan
+                            </h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Monthly Fee (₦)</label>
+                                    <input type="number" id="price-pro-monthly" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Annual Fee (₦)</label>
+                                    <input type="number" id="price-pro-annually" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Enterprise Plan -->
+                        <div class="bg-[#0b0c15] p-5 rounded-xl border border-blue-500/5 space-y-4 md:col-span-2">
+                            <h3 class="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                <i data-lucide="building-2" class="w-4 h-4"></i> Enterprise Plan
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Monthly Fee (₦)</label>
+                                    <input type="number" id="price-enterprise-monthly" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-2">Annual Fee (₦)</label>
+                                    <input type="number" id="price-enterprise-annually" class="w-full px-3.5 py-2.5 bg-[#111329] border border-gray-800 rounded-lg text-white text-xs placeholder-gray-500 focus:border-[#00A6FF] outline-none font-mono">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -2504,7 +2607,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             activeTab = tab;
             
             // Toggle highlight tabs
-            ['merchants', 'sessions', 'trials', 'rawdb'].forEach(t => {
+            ['merchants', 'sessions', 'trials', 'rawdb', 'pricing'].forEach(t => {
                 const el = document.getElementById(\`tab-\${t}\`);
                 const viewEl = document.getElementById(\`view-\${t}\`);
                 
@@ -2521,6 +2624,7 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             else if (tab === 'sessions') renderSessions();
             else if (tab === 'trials') renderTrials();
             else if (tab === 'rawdb') loadRawDbEditor();
+            else if (tab === 'pricing') loadPricingPricesForm();
 
             lucide.createIcons();
         }
@@ -2752,6 +2856,59 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                 }
             } catch (e) {
                 alert('Network connection error matching system write request.');
+            }
+        }
+
+        async function loadPricingPricesForm() {
+            try {
+                const res = await fetch('/api/admin/pricing-prices');
+                if (res.ok) {
+                    const prices = await res.json();
+                    document.getElementById('price-growth-monthly').value = prices.growth_monthly || 4500;
+                    document.getElementById('price-growth-annually').value = prices.growth_annually || 45000;
+                    document.getElementById('price-pro-monthly').value = prices.pro_monthly || 7500;
+                    document.getElementById('price-pro-annually').value = prices.pro_annually || 75000;
+                    document.getElementById('price-enterprise-monthly').value = prices.enterprise_monthly || 20000;
+                    document.getElementById('price-enterprise-annually').value = prices.enterprise_annually || 200000;
+                } else {
+                    alert('Failed to retrieve pricing records from endpoint.');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Connection error loading SaaS plans prices.');
+            }
+        }
+
+        async function savePricingPrices() {
+            const prices = {
+                growth_monthly: Number(document.getElementById('price-growth-monthly').value) || 0,
+                growth_annually: Number(document.getElementById('price-growth-annually').value) || 0,
+                pro_monthly: Number(document.getElementById('price-pro-monthly').value) || 0,
+                pro_annually: Number(document.getElementById('price-pro-annually').value) || 0,
+                enterprise_monthly: Number(document.getElementById('price-enterprise-monthly').value) || 0,
+                enterprise_annually: Number(document.getElementById('price-enterprise-annually').value) || 0,
+            };
+
+            try {
+                const res = await fetch('/api/admin/pricing-prices', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ prices })
+                });
+
+                if (res.ok) {
+                    alert('🎉 Subscription plans pricing updated successfully!');
+                    await fetchFreshDB();
+                } else {
+                    const data = await res.json();
+                    alert('Error saving plan pricing changes: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Connection failed while writing pricing configurations.');
             }
         }
 
@@ -3750,11 +3907,13 @@ app.post("/api/smart-input", async (req, res) => {
 
       let response;
       let delayMs = 1500;
+      const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       for (let attempt = 1; attempt <= 3; attempt++) {
+        const currentModel = modelsToTry[attempt - 1] || "gemini-3.5-flash";
         try {
-          console.log(`Attempt ${attempt}: Calling ai.models.generateContent in /api/smart-input...`);
+          console.log(`Attempt ${attempt}: Calling ai.models.generateContent in /api/smart-input with model ${currentModel}...`);
           response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: currentModel,
             contents: { parts },
             config: {
               responseMimeType: "application/json",
@@ -3922,10 +4081,13 @@ app.post("/api/smart-product", async (req, res) => {
 
       let response;
       let delayMs = 1500;
+      const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       for (let attempt = 1; attempt <= 3; attempt++) {
+        const currentModel = modelsToTry[attempt - 1] || "gemini-3.5-flash";
         try {
+          console.log(`Attempt ${attempt}: Calling ai.models.generateContent in /api/smart-catalog with model ${currentModel}...`);
           response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: currentModel,
             contents: { parts },
             config: {
               responseMimeType: "application/json",

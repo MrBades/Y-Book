@@ -123,9 +123,38 @@ export default function App() {
     };
   });
 
-  const handleUpdatePricingPlanPrices = (updated: typeof pricingPlanPrices) => {
+  // Fetch prices from server on mount
+  useEffect(() => {
+    const fetchPricingPlanPrices = async () => {
+      try {
+        const res = await apiFetch('/api/admin/pricing-prices');
+        if (res.ok) {
+          const data = await res.json();
+          setPricingPlanPrices(data);
+          localStorage.setItem('yb_pricing_prices', JSON.stringify(data));
+        }
+      } catch (err) {
+        console.error("Failed to load server pricing prices:", err);
+      }
+    };
+    fetchPricingPlanPrices();
+  }, []);
+
+  const handleUpdatePricingPlanPrices = async (updated: typeof pricingPlanPrices) => {
     setPricingPlanPrices(updated);
     localStorage.setItem('yb_pricing_prices', JSON.stringify(updated));
+    try {
+      await apiFetch('/api/admin/pricing-prices', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-admin-password': localStorage.getItem('system_admin_password_token') || 'yeedem_admin_cpanel_2026'
+        },
+        body: JSON.stringify({ prices: updated })
+      });
+    } catch (err) {
+      console.error("Failed to sync pricing updates to server:", err);
+    }
   };
 
   // Suspicious device lock security States
