@@ -82,12 +82,11 @@ app.use((req, res, next) => {
 });
 
 // Auto-synchronize local cached DB state with external PostgreSQL cloud storage under serverless/Vercel environments
-app.use(async (req, res, next) => {
-    try {
-        await initAndSyncDatabase();
-    } catch (err) {
-        console.error("Cloud database synchronization warning:", err);
-    }
+app.use((req, res, next) => {
+    // Fire-and-forget sync in the background so we NEVER block HTTP requests (especially on TLS timeouts/cold starts)
+    initAndSyncDatabase().catch(err => {
+        console.error("Background cloud database synchronization warning:", err);
+    });
     next();
 });
 

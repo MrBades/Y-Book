@@ -420,7 +420,7 @@ export default function App() {
               });
               setActiveScreen('landing');
             }
-          } else {
+          } else if (res.status === 401) {
             localStorage.removeItem('session_id');
             localStorage.removeItem('active_screen');
             localStorage.removeItem('products_catalog');
@@ -450,6 +450,10 @@ export default function App() {
               trialCount: 0
             });
             setActiveScreen('landing');
+          } else {
+            // Transient 500/503/555 database error or server reboot.
+            // Do NOT wipe session; let them stay in session and rely on local JSON db replication.
+            console.warn("Transient validation warning (network or database error). Retaining active session:", res?.status);
           }
         }
       setAuthChecking(false);

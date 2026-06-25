@@ -19,15 +19,19 @@ if (!isVercel && !fs.existsSync(join(process.cwd(), 'data'))) {
 let pool: any = null;
 if (process.env.DATABASE_URL) {
     try {
+        const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: {
+            ssl: isLocal ? false : {
                 rejectUnauthorized: false
             },
-            // Increase timeouts to allow for TLS handshakes and serverless cold starts
-            connectionTimeoutMillis: 30000, 
-            idleTimeoutMillis: 60000,
-            max: 10
+            // Reduce pool size and idle timeout for serverless & container environments
+            // to prevent keeping dead/frozen connections in the pool which cause ECONNRESET
+            max: 3,
+            connectionTimeoutMillis: 15000, 
+            idleTimeoutMillis: 1000,
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 10000
         });
         
         // Handle unexpected errors on idle clients to prevent unhandled exception crash
@@ -35,20 +39,23 @@ if (process.env.DATABASE_URL) {
             console.error('[DATABASE_POOL_ERROR] Unexpected error on idle pg client / pool:', err);
         });
 
-        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully.");
+        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully with serverless-optimized settings.");
     } catch (poolErr) {
         console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
     }
 }
 
 let isDbSynced = false;
+let isSyncing = false;
 
 // Cloud Database Initialization and Synchronization Loader
 export const initAndSyncDatabase = async () => {
-    if (isDbSynced) return;
+    if (isDbSynced || isSyncing) return;
+    isSyncing = true;
     if (!pool) {
         console.log("No cloud DATABASE_URL is configured. Operating purely in local JSON storage file mode.");
         isDbSynced = true;
+        isSyncing = false;
         return;
     }
 
@@ -177,6 +184,8 @@ export const initAndSyncDatabase = async () => {
         console.error("Failed to sync database from cloud PostgreSQL, using local fallback filesystem state:", err);
         // Force true to avoid blocking startup requests if cloud db suffers a transient error
         isDbSynced = true;
+    } finally {
+        isSyncing = false;
     }
 };
 
