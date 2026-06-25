@@ -31,6 +31,10 @@ if (process.env.DATABASE_URL) {
                     dbUrl += '?sslmode=require';
                 }
             }
+            // Add uselibpqcompat=true to eliminate security warnings about upcoming pg SSL behavior changes
+            if (!dbUrl.includes('uselibpqcompat=')) {
+                dbUrl += '&uselibpqcompat=true';
+            }
         }
 
         pool = new Pool({
