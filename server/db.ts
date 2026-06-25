@@ -17,61 +17,128 @@ if (!isVercel && !fs.existsSync(join(process.cwd(), 'data'))) {
 }
 
 let pool: any = null;
-if (process.env.DATABASE_URL) {
-    try {
-        let dbUrl = process.env.DATABASE_URL.trim();
-        if (dbUrl) {
-            if (dbUrl.includes('sslmode=')) {
-                // Explicitly use sslmode=require to avoid insecure fallback warning while allowing rejectUnauthorized: false to work correctly
-                dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=require');
-            } else {
-                if (dbUrl.includes('?')) {
-                    dbUrl += '&sslmode=require';
+
+export const getPool = () => {
+    if (pool) return pool;
+
+    if (process.env.DATABASE_URL) {
+        try {
+            let dbUrl = process.env.DATABASE_URL.trim();
+            if (dbUrl) {
+                if (dbUrl.includes('sslmode=')) {
+                    // Explicitly use sslmode=require to avoid insecure fallback warning while allowing rejectUnauthorized: false to work correctly
+                    dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=require');
                 } else {
-                    dbUrl += '?sslmode=require';
+                    if (dbUrl.includes('?')) {
+                        dbUrl += '&sslmode=require';
+                    } else {
+                        dbUrl += '?sslmode=require';
+                    }
+                }
+                // Add uselibpqcompat=true to eliminate security warnings about upcoming pg SSL behavior changes
+                if (!dbUrl.includes('uselibpqcompat=')) {
+                    dbUrl += '&uselibpqcompat=true';
                 }
             }
-            // Add uselibpqcompat=true to eliminate security warnings about upcoming pg SSL behavior changes
-            if (!dbUrl.includes('uselibpqcompat=')) {
-                dbUrl += '&uselibpqcompat=true';
+
+            pool = new Pool({
+                connectionString: dbUrl,
+                ssl: {
+                    rejectUnauthorized: false
+                },
+                connectionTimeoutMillis: 10000, 
+                idleTimeoutMillis: 20000,
+                max: 10
+            });
+            
+            // Handle unexpected errors on idle clients to prevent unhandled exception crash
+            pool.on('error', (err: any) => {
+                console.error('[DATABASE_POOL_ERROR] Unexpected error on idle pg client / pool:', err);
+                pool = null; // Mark pool for dynamic recreation on subsequent query
+            });
+
+            console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully with serverless-optimized settings.");
+        } catch (poolErr) {
+            console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
+            pool = null;
+        }
+    }
+    return pool;
+};
+
+// Helper to execute cloud queries with automatic socket reconnection and single-retry fallback on connection termination
+export const executeCloudQuery = async (text: string, params?: any[]): Promise<any> => {
+    const activePool = getPool();
+    if (!activePool) {
+        throw new Error("No cloud database is configured.");
+    }
+
+    try {
+        return await activePool.query(text, params);
+    } catch (err: any) {
+        const errMsg = err.message || '';
+        const isConnectionError = 
+            errMsg.includes('terminated') || 
+            errMsg.includes('timeout') || 
+            errMsg.includes('EPIPE') || 
+            errMsg.includes('ECONNRESET') || 
+            errMsg.includes('socket') || 
+            err.code === '08006' || 
+            err.code === '08001' || 
+            err.code === '08004' || 
+            err.code === '08P01';
+
+        if (isConnectionError) {
+            console.warn(`[DATABASE_QUERY_RETRY] Connection issue detected: "${errMsg}". Re-creating connection pool and retrying query...`);
+            
+            // Gracefully end the stale connection pool
+            try {
+                if (pool) {
+                    await pool.end().catch(() => {});
+                }
+            } catch (endErr) {}
+            pool = null;
+
+            const newPool = getPool();
+            if (!newPool) {
+                throw new Error("Failed to re-initialize cloud database pool during retry.");
             }
+            
+            // Retry the query exactly once
+            return await newPool.query(text, params);
         }
 
-        pool = new Pool({
-            connectionString: dbUrl,
-            ssl: {
-                rejectUnauthorized: false
-            },
-            connectionTimeoutMillis: 10000, 
-            idleTimeoutMillis: 20000,
-            max: 10
-        });
-        
-        // Handle unexpected errors on idle clients to prevent unhandled exception crash
-        pool.on('error', (err: any) => {
-            console.error('[DATABASE_POOL_ERROR] Unexpected error on idle pg client / pool:', err);
-        });
-
-        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully with serverless-optimized settings.");
-    } catch (poolErr) {
-        console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
+        throw err;
     }
-}
+};
 
 let isDbSynced = false;
 let isSyncing = false;
 let syncPromise: Promise<void> | null = null;
+let lastSyncAttemptTime = 0;
+const SYNC_RETRY_COOLDOWN = 10000; // 10 seconds cooldown between synchronization retries
 
 // Cloud Database Initialization and Synchronization Loader
 export const initAndSyncDatabase = async () => {
     if (isDbSynced) return;
+
+    const now = Date.now();
+    // If a sync attempt recently failed, enforce a small cooldown before attempting to sync from the cloud database again, 
+    // allowing the system to use local cached state gracefully without blocking the current client request with socket timeouts.
+    if (now - lastSyncAttemptTime < SYNC_RETRY_COOLDOWN) {
+        console.warn("[DB SYNC] Postponing cloud PostgreSQL synchronization: in retry cooldown. Falling back to local ledger cache.");
+        return;
+    }
+
     if (isSyncing && syncPromise) {
         return syncPromise;
     }
 
     isSyncing = true;
+    lastSyncAttemptTime = now;
     syncPromise = (async () => {
-        if (!pool) {
+        const activePool = getPool();
+        if (!activePool) {
             console.log("No cloud DATABASE_URL is configured. Operating purely in local JSON storage file mode.");
             isDbSynced = true;
             isSyncing = false;
@@ -81,7 +148,7 @@ export const initAndSyncDatabase = async () => {
         try {
             console.log("Synchronizing active DB snapshot with remote PostgreSQL cloud storage...");
             // Ensure table exists
-            await pool.query(`
+            await executeCloudQuery(`
                 CREATE TABLE IF NOT EXISTS yeedem_db (
                     key VARCHAR(50) PRIMARY KEY,
                     data JSONB,
@@ -90,7 +157,7 @@ export const initAndSyncDatabase = async () => {
             `);
 
             // Check if active_db row exists
-            const res = await pool.query(`SELECT data FROM yeedem_db WHERE key = 'active_db'`);
+            const res = await executeCloudQuery(`SELECT data FROM yeedem_db WHERE key = 'active_db'`);
             if (res.rows.length > 0) {
                 const dbData = res.rows[0].data;
                 if (dbData && typeof dbData === 'object') {
@@ -110,7 +177,7 @@ export const initAndSyncDatabase = async () => {
                     // Merge instead of raw overwrite to protect accounts/sessions from being deleted on sync/refresh
                     if (localUserCount > cloudUserCount || (localUserCount === cloudUserCount && localSessionCount > cloudSessionCount)) {
                         console.log(`[DB SYNC] Local DB has more users/sessions (${localUserCount}/${localSessionCount}) than cloud DB (${cloudUserCount}/${cloudSessionCount}). Saving local to cloud to prevent loss.`);
-                        await pool.query(
+                        await executeCloudQuery(
                             `INSERT INTO yeedem_db (key, data, updated_at) 
                              VALUES ('active_db', $1, NOW()) 
                              ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
@@ -164,7 +231,7 @@ export const initAndSyncDatabase = async () => {
                         const finalMergedSessionCount = mergedData.merchantSessions.length;
                         if (finalMergedUserCount > cloudUserCount || finalMergedSessionCount > cloudSessionCount) {
                             console.log(`[DB SYNC] Uploading merged dataset back to remote cloud PostgreSQL.`);
-                            await pool.query(
+                            await executeCloudQuery(
                                 `INSERT INTO yeedem_db (key, data, updated_at) 
                                  VALUES ('active_db', $1, NOW()) 
                                  ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
@@ -191,7 +258,7 @@ export const initAndSyncDatabase = async () => {
                         staff: []
                     };
                 }
-                await pool.query(
+                await executeCloudQuery(
                     `INSERT INTO yeedem_db (key, data) VALUES ('active_db', $1) ON CONFLICT (key) DO UPDATE SET data = $1`,
                     [JSON.stringify(currentData)]
                 );
@@ -201,8 +268,8 @@ export const initAndSyncDatabase = async () => {
             isDbSynced = true;
         } catch (err) {
             console.error("Failed to sync database from cloud PostgreSQL, using local fallback filesystem state:", err);
-            // Force true to avoid blocking startup requests if cloud db suffers a transient error
-            isDbSynced = true;
+            // Crucial: do NOT permanently lock isDbSynced to true if sync fails.
+            // This prevents freezing the container in a permanently un-synchronized state which causes users to get logged out.
         } finally {
             isSyncing = false;
         }
@@ -312,8 +379,9 @@ export const writeDB = (data: any) => {
         fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
         
         // Asynchronously backup changes to cloud PostgreSQL storage if configured and initial sync is complete
-        if (pool && isDbSynced) {
-            pool.query(
+        const activePool = getPool();
+        if (activePool && isDbSynced) {
+            executeCloudQuery(
                 `INSERT INTO yeedem_db (key, data, updated_at) 
                  VALUES ('active_db', $1, NOW()) 
                  ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
@@ -321,7 +389,7 @@ export const writeDB = (data: any) => {
             ).catch((err: any) => {
                 console.error("Remote cloud PostgreSQL replication update mismatch:", err);
             });
-        } else if (pool && !isDbSynced) {
+        } else if (activePool && !isDbSynced) {
             console.warn("[DB SYNC] Postponing cloud PostgreSQL replication update: Initial synchronization is still in progress.");
             // Trigger synchronization in case it got stuck or hasn't completed yet
             initAndSyncDatabase().catch((syncErr) => {
