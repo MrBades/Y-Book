@@ -60,7 +60,6 @@ export default function InvoiceTemplateSettings({
   const [businessType, setBusinessType] = useState(business.businessType || 'buy_and_sell');
   const [template, setTemplate] = useState(business.invoiceTemplatePreference);
   const [logoBase64, setLogoBase64] = useState(business.businessLogo || '');
-  const [customPaymentLink, setCustomPaymentLink] = useState(business.customPaymentLink || '');
   
   // Custom template attributes state
   const [accentColor, setAccentColor] = useState(business.customAccentColor || '#00A6FF');
@@ -110,7 +109,6 @@ export default function InvoiceTemplateSettings({
       setBusinessType(business.businessType || 'buy_and_sell');
       setTemplate(business.invoiceTemplatePreference || 'classic');
       setLogoBase64(business.businessLogo || '');
-      setCustomPaymentLink(business.customPaymentLink || '');
       setAccentColor(business.customAccentColor || '#00A6FF');
       setLogoWidth(business.logoWidth || 50);
       setLogoHeight(business.logoHeight || 50);
@@ -187,7 +185,6 @@ export default function InvoiceTemplateSettings({
     let hTitle = headerTitle;
     let fNotes = footerNotes;
     let shadow = shadowStyle;
-    let payLink = customPaymentLink;
 
     if (field === 'businessName') { bName = val; setBusinessName(val); }
     else if (field === 'address') { addr = val; setAddress(val); }
@@ -202,7 +199,6 @@ export default function InvoiceTemplateSettings({
     else if (field === 'headerTitle') { hTitle = val; setHeaderTitle(val); }
     else if (field === 'footerNotes') { fNotes = val; setFooterNotes(val); }
     else if (field === 'shadowStyle') { shadow = val; setShadowStyle(val); }
-    else if (field === 'customPaymentLink') { payLink = val; setCustomPaymentLink(val); }
 
     onSaveSettings({
       ...business,
@@ -219,7 +215,6 @@ export default function InvoiceTemplateSettings({
       customHeaderTitle: hTitle,
       customFooterNotes: fNotes,
       customShadowStyle: shadow,
-      customPaymentLink: payLink,
       headerStyles: headerStyle,
       customerStyles: customerStyle,
       tableStyles: tableStyle,
@@ -261,7 +256,6 @@ export default function InvoiceTemplateSettings({
       customHeaderTitle: headerTitle,
       customFooterNotes: footerNotes,
       customShadowStyle: shadowStyle,
-      customPaymentLink,
       headerStyles: freshHeader,
       customerStyles: freshCustomer,
       tableStyles: freshTable,
@@ -312,7 +306,6 @@ export default function InvoiceTemplateSettings({
       customHeaderTitle: headerTitle,
       customFooterNotes: footerNotes,
       customShadowStyle: shadowStyle,
-      customPaymentLink,
       headerStyles: headerStyle,
       customerStyles: customerStyle,
       tableStyles: tableStyle,
@@ -776,20 +769,8 @@ export default function InvoiceTemplateSettings({
                   type="text"
                   value={address}
                   onChange={(e) => handleFieldChange('address', e.target.value)}
-                  className="w-full text-xs rounded-xl border border-gray-200 outline-none focus:border-[#00A6FF] p-2.5 bg-gray-55/20 transition-all font-semibold"
+                  className="w-full text-xs rounded-xl border border-gray-200 outline-none focus:border-[#00A6FF] p-2.5 bg-gray-55/20 transition-all"
                   placeholder="e.g. Shop 24B, Alaba International Market, Ojo, Lagos"
-                />
-              </div>
-
-              {/* Custom Payment Link */}
-              <div>
-                <label className="block font-bold text-gray-400 uppercase tracking-wider text-[9px] mb-1">Custom Payment Link (e.g. Paystack / Flutterwave / Monnify)</label>
-                <input
-                  type="url"
-                  value={customPaymentLink}
-                  onChange={(e) => handleFieldChange('customPaymentLink', e.target.value)}
-                  className="w-full text-xs rounded-xl border border-gray-200 outline-none focus:border-[#00A6FF] p-2.5 bg-gray-55/20 transition-all font-semibold"
-                  placeholder="e.g. https://paystack.com/pay/yeedembooks"
                 />
               </div>
 

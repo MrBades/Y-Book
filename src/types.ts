@@ -54,7 +54,6 @@ export interface BusinessProfile {
   customHeaderTitle?: string;
   customFooterNotes?: string;
   customShadowStyle?: 'none' | 'sm' | 'md' | 'lg' | 'xl';
-  customPaymentLink?: string; // payment link or gateway configured by Merchant
   // Logo & Header transformations
   logoWidth?: number;
   logoHeight?: number;

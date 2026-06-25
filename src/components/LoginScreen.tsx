@@ -282,15 +282,63 @@ export default function LoginScreen({ onLogin, deviceFingerprint, approxRegion, 
     return () => window.removeEventListener('message', handleOAuthMessage);
   }, [onLogin, onNavigate]);
 
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setError('');
-    const url = phoneOrEmail && phoneOrEmail.includes('@') 
-        ? `/api/auth/google?email=${encodeURIComponent(phoneOrEmail.trim())}` 
-        : '/api/auth/google';
-    
-    // Direct same-tab redirection to prevent browser popup blocking or new browser tabs
-    window.location.href = url;
+    try {
+      const { auth, googleProvider } = await import('../lib/firebase');
+      const { signInWithPopup } = await import('firebase/auth');
+      
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      if (user && user.email) {
+        const res = await fetch('/api/auth/google/firebase-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-device-fingerprint': deviceFingerprint || 'unknown_fp',
+            'x-approx-region': approxRegion || 'NG-Lagos'
+          },
+          body: JSON.stringify({
+            email: user.email,
+            displayName: user.displayName || '',
+            uid: user.uid
+          })
+        });
+        
+        if (!res.ok) {
+          throw new Error('Failed to synchronize authenticated Google user session on the server.');
+        }
+        
+        const data = await res.json();
+        if (data.session_id && data.phone_or_email) {
+          onLogin(data.session_id, data.phone_or_email, data.user);
+          if (onNavigate) {
+            onNavigate('dashboard');
+          }
+        } else {
+          throw new Error('Response payload from backend lacked valid login characteristics.');
+        }
+      } else {
+        throw new Error('Completed authentication but received no Google email associated with the account.');
+      }
+    } catch (err: any) {
+      console.warn("Firebase Client OAuth failed, trying backend fallback:", err);
+      const url = phoneOrEmail && phoneOrEmail.includes('@') 
+          ? `/api/auth/google?email=${encodeURIComponent(phoneOrEmail.trim())}` 
+          : '/api/auth/google';
+      const w = 550;
+      const h = 650;
+      const left = window.screen.width / 2 - w / 2;
+      const top = window.screen.height / 2 - h / 2;
+      const popup = window.open(url, 'Google Sign-In', `width=${w},height=${h},top=${top},left=${left},status=no,resizable=yes,scrollbars=yes`);
+      if (!popup) {
+        setError('Popup blocked! Please allow popups or use another login method.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
   };
     
   const pinInputRef = React.useRef<HTMLInputElement>(null);

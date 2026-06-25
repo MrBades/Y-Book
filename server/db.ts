@@ -19,49 +19,26 @@ if (!isVercel && !fs.existsSync(join(process.cwd(), 'data'))) {
 let pool: any = null;
 if (process.env.DATABASE_URL) {
     try {
-        let dbUrl = process.env.DATABASE_URL.trim();
-        if (dbUrl) {
-            if (dbUrl.includes('?')) {
-                if (!dbUrl.includes('sslmode=')) {
-                    dbUrl += '&sslmode=verify-full';
-                }
-            } else {
-                dbUrl += '?sslmode=verify-full';
-            }
-        }
-
         pool = new Pool({
-            connectionString: dbUrl,
+            connectionString: process.env.DATABASE_URL,
             ssl: {
                 rejectUnauthorized: false
-            },
-            connectionTimeoutMillis: 10000, 
-            idleTimeoutMillis: 20000,
-            max: 10
+            }
         });
-        
-        // Handle unexpected errors on idle clients to prevent unhandled exception crash
-        pool.on('error', (err: any) => {
-            console.error('[DATABASE_POOL_ERROR] Unexpected error on idle pg client / pool:', err);
-        });
-
-        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully with serverless-optimized settings.");
+        console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully.");
     } catch (poolErr) {
         console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
     }
 }
 
 let isDbSynced = false;
-let isSyncing = false;
 
 // Cloud Database Initialization and Synchronization Loader
 export const initAndSyncDatabase = async () => {
-    if (isDbSynced || isSyncing) return;
-    isSyncing = true;
+    if (isDbSynced) return;
     if (!pool) {
         console.log("No cloud DATABASE_URL is configured. Operating purely in local JSON storage file mode.");
         isDbSynced = true;
-        isSyncing = false;
         return;
     }
 
@@ -81,84 +58,8 @@ export const initAndSyncDatabase = async () => {
         if (res.rows.length > 0) {
             const dbData = res.rows[0].data;
             if (dbData && typeof dbData === 'object') {
-                let localData: any = null;
-                if (fs.existsSync(DB_PATH)) {
-                    try {
-                        const content = fs.readFileSync(DB_PATH, 'utf-8');
-                        localData = content ? JSON.parse(content) : null;
-                    } catch (e) {}
-                }
-
-                const localUserCount = (localData && Array.isArray(localData.users)) ? localData.users.length : 0;
-                const cloudUserCount = (dbData && Array.isArray(dbData.users)) ? dbData.users.length : 0;
-                const localSessionCount = (localData && Array.isArray(localData.merchantSessions)) ? localData.merchantSessions.length : 0;
-                const cloudSessionCount = (dbData && Array.isArray(dbData.merchantSessions)) ? dbData.merchantSessions.length : 0;
-
-                // Merge instead of raw overwrite to protect accounts/sessions from being deleted on sync/refresh
-                if (localUserCount > cloudUserCount || (localUserCount === cloudUserCount && localSessionCount > cloudSessionCount)) {
-                    console.log(`[DB SYNC] Local DB has more users/sessions (${localUserCount}/${localSessionCount}) than cloud DB (${cloudUserCount}/${cloudSessionCount}). Saving local to cloud to prevent loss.`);
-                    await pool.query(
-                        `INSERT INTO yeedem_db (key, data, updated_at) 
-                         VALUES ('active_db', $1, NOW()) 
-                         ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
-                        [JSON.stringify(localData)]
-                    );
-                } else {
-                    const mergedData = { ...dbData };
-                    if (localData) {
-                        // Merge users: keep all unique users by ID
-                        const userMap = new Map();
-                        (dbData.users || []).forEach((u: any) => userMap.set(u.id, u));
-                        (localData.users || []).forEach((u: any) => {
-                            if (!userMap.has(u.id)) {
-                                userMap.set(u.id, u);
-                            }
-                        });
-                        mergedData.users = Array.from(userMap.values());
-
-                        // Merge merchantSessions: keep all unique sessions by session_id
-                        const sessionMap = new Map();
-                        (dbData.merchantSessions || []).forEach((s: any) => sessionMap.set(s.session_id, s));
-                        (localData.merchantSessions || []).forEach((s: any) => {
-                            if (!sessionMap.has(s.session_id)) {
-                                sessionMap.set(s.session_id, s);
-                            }
-                        });
-                        mergedData.merchantSessions = Array.from(sessionMap.values());
-
-                        // Merge staff
-                        const staffMap = new Map();
-                        (dbData.staff || []).forEach((s: any) => staffMap.set(s.id, s));
-                        (localData.staff || []).forEach((s: any) => {
-                            if (!staffMap.has(s.id)) {
-                                staffMap.set(s.id, s);
-                            }
-                        });
-                        mergedData.staff = Array.from(staffMap.values());
-
-                        if (Array.isArray(localData.anonymousTrialTrackers)) {
-                            mergedData.anonymousTrialTrackers = [...(dbData.anonymousTrialTrackers || []), ...localData.anonymousTrialTrackers.filter((item: any) => 
-                                !(dbData.anonymousTrialTrackers || []).some((cloudItem: any) => cloudItem.id === item.id)
-                            )];
-                        }
-                    }
-
-                    fs.writeFileSync(DB_PATH, JSON.stringify(mergedData, null, 2), 'utf-8');
-                    console.log("Successfully synchronized active DB from remote cloud PostgreSQL (with intelligent merge).");
-
-                    // Upload back if we merged new local data
-                    const finalMergedUserCount = mergedData.users.length;
-                    const finalMergedSessionCount = mergedData.merchantSessions.length;
-                    if (finalMergedUserCount > cloudUserCount || finalMergedSessionCount > cloudSessionCount) {
-                        console.log(`[DB SYNC] Uploading merged dataset back to remote cloud PostgreSQL.`);
-                        await pool.query(
-                            `INSERT INTO yeedem_db (key, data, updated_at) 
-                             VALUES ('active_db', $1, NOW()) 
-                             ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()`,
-                            [JSON.stringify(mergedData)]
-                        ).catch((err: any) => console.error("Failed to write back merged DB to cloud:", err));
-                    }
-                }
+                fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2), 'utf-8');
+                console.log("Successfully synchronized active DB from remote cloud PostgreSQL.");
             }
         } else {
             // First run: Seed cloud PostgreSQL from existing local DB
@@ -190,8 +91,6 @@ export const initAndSyncDatabase = async () => {
         console.error("Failed to sync database from cloud PostgreSQL, using local fallback filesystem state:", err);
         // Force true to avoid blocking startup requests if cloud db suffers a transient error
         isDbSynced = true;
-    } finally {
-        isSyncing = false;
     }
 };
 

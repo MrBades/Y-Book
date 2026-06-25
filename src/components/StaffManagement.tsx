@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, ToggleLeft, ToggleRight, Copy, Check } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { getAppBaseUrl } from '../utils/url';
 
 interface Staff {
     id: string;
@@ -322,7 +321,7 @@ export default function StaffManagement({
     const handleCopy = (s: Staff) => {
         const ownerShopSlug = s.shop_slug || businessName?.toLowerCase().replace(/\s+/g, '-') || 'default-shop';
         const workerNameSlug = s.name_slug;
-        const generatedLink = `${getAppBaseUrl()}/terminal/${ownerShopSlug}/${workerNameSlug}`;
+        const generatedLink = `${window.location.origin}/terminal/${ownerShopSlug}/${workerNameSlug}`;
 
         navigator.clipboard.writeText(generatedLink)
             .then(() => {

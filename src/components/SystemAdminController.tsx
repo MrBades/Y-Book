@@ -27,15 +27,6 @@ interface SystemAdminControllerProps {
   onUpdateCustomers: (updated: any[]) => void;
   onUpdateProducts: (updated: any[]) => void;
   userEmail: string;
-  pricingPlanPrices: {
-    growth_monthly: number;
-    growth_annually: number;
-    pro_monthly: number;
-    pro_annually: number;
-    enterprise_monthly: number;
-    enterprise_annually: number;
-  };
-  onUpdatePricingPlanPrices: (updated: any) => void;
 }
 
 interface AuditLog {
@@ -52,9 +43,7 @@ export default function SystemAdminController({
   restockLogs,
   onUpdateCustomers,
   onUpdateProducts,
-  userEmail,
-  pricingPlanPrices,
-  onUpdatePricingPlanPrices
+  userEmail
 }: SystemAdminControllerProps) {
   // Telemetry Metrics
   const totalOutstandingDebt = customers.reduce((sum, c) => sum + (Number(c.activeDebtBalance) || 0), 0);
@@ -174,11 +163,6 @@ export default function SystemAdminController({
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  const updatePricesWithLog = (updated: typeof pricingPlanPrices) => {
-    onUpdatePricingPlanPrices(updated);
-    addAuditLog('SUCCESS', 'CPANEL_PRICE_CHANGE', `Admin changed plan prices in control desk (Growth: ₦${updated.growth_monthly}, Pro: ₦${updated.pro_monthly}).`);
   };
 
   return (
@@ -376,72 +360,6 @@ export default function SystemAdminController({
                 >
                   <Unlock className="w-4 h-4" /> Reset Server Lockout Flag Database
                 </button>
-              </div>
-
-              {/* Master Plan Pricing Controllers */}
-              <div className="bg-white/[0.02] p-4 rounded-2xl border border-white/5 space-y-3.5 sm:col-span-2">
-                <p className="text-xs font-bold font-mono text-gray-300 flex items-center gap-1.5">
-                  <Coins className="w-4 h-4 text-[#00A6FF]" /> 5. CPanel SaaS Plan Price Management (₦)
-                </p>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Real-time administration control over subscription tiers pricing across landing and billing views.
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Growth Monthly</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.growth_monthly}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, growth_monthly: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Growth Annually</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.growth_annually}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, growth_annually: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Pro Monthly</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.pro_monthly}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, pro_monthly: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Pro Annually</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.pro_annually}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, pro_annually: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Enterprise Monthly</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.enterprise_monthly}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, enterprise_monthly: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase font-bold text-gray-400 block">Enterprise Annually</label>
-                    <input 
-                      type="number"
-                      value={pricingPlanPrices.enterprise_annually}
-                      onChange={(e) => updatePricesWithLog({ ...pricingPlanPrices, enterprise_annually: Number(e.target.value) })}
-                      className="w-full text-xs font-semibold bg-gray-900 border border-white/10 p-2 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-[#00A6FF]"
-                    />
-                  </div>
-                </div>
               </div>
 
             </div>
