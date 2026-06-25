@@ -65,7 +65,8 @@ import {
   Printer,
   Maximize2,
   Minimize2,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
@@ -902,6 +903,10 @@ export default function App() {
   const isService = userState.business?.businessType === 'service';
   const [isTourOpen, setIsTourOpen] = useState(false);
 
+  const [availableCloudBackup, setAvailableCloudBackup] = useState<any>(null);
+  const [hasDismissedSyncPrompt, setHasDismissedSyncPrompt] = useState<boolean>(false);
+  const [isSyncingBackup, setIsSyncingBackup] = useState<boolean>(false);
+
   // Progressive Web App (PWA) installation lifecycle state control
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
@@ -1078,7 +1083,7 @@ export default function App() {
 
       // Smart Cross-Browser Auto-Sync Engine:
       // If the browser registers an empty ledger for this account on boot/login,
-      // query the server backups directory to automatically download & restore the latest state.
+      // query the server backups directory to see if a backup exists.
       if (parsedCustomers.length === 0 && parsedProducts.length === 0) {
         const autoSyncFromServer = async () => {
           try {
@@ -1093,30 +1098,38 @@ export default function App() {
             const backups = await listResponse.json();
             
             if (backups && backups.length > 0) {
-              const latestBackup = backups[0]; // Filtered & sorted newest first on server
-              const downloadResponse = await apiFetch(`/api/backup/download/${latestBackup.filename}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'x-session-id': token
+              const syncMode = localStorage.getItem(`ledger_sync_mode_${userState.email}`) || 'manual';
+              
+              if (syncMode === 'automatic') {
+                const latestBackup = backups[0]; // Filtered & sorted newest first on server
+                const downloadResponse = await apiFetch(`/api/backup/download/${latestBackup.filename}`, {
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-session-id': token
+                  }
+                });
+                if (downloadResponse.ok) {
+                  const payload = await downloadResponse.json();
+                  if (payload && payload.data) {
+                    const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
+                    if (restCust) {
+                      setCustomers(restCust);
+                      localStorage.setItem(newCustomersKey, JSON.stringify(restCust));
+                    }
+                    if (restProd) {
+                      setProducts(restProd);
+                      localStorage.setItem(newProductsKey, JSON.stringify(restProd));
+                    }
+                    if (restLogs) {
+                      setRestockLogs(restLogs || []);
+                    }
+                    console.log("🔄 Cross-Browser Auto-Sync: Successfully restored latest ledger state from Yeedem servers.");
+                  }
                 }
-              });
-              if (downloadResponse.ok) {
-                const payload = await downloadResponse.json();
-                if (payload && payload.data) {
-                  const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
-                  if (restCust) {
-                    setCustomers(restCust);
-                    localStorage.setItem(newCustomersKey, JSON.stringify(restCust));
-                  }
-                  if (restProd) {
-                    setProducts(restProd);
-                    localStorage.setItem(newProductsKey, JSON.stringify(restProd));
-                  }
-                  if (restLogs) {
-                    setRestockLogs(restLogs || []);
-                  }
-                  console.log("🔄 Cross-Browser Auto-Sync: Successfully restored latest ledger state from Yeedem servers.");
-                }
+              } else {
+                // Manual mode - notify user and let them choose whether to restore
+                console.log("ℹ️ Cloud Backup Available: Operating in Manual Sync mode. Prompt will be shown on dashboard.");
+                setAvailableCloudBackup(backups[0]);
               }
             }
           } catch (syncErr) {
@@ -2323,6 +2336,99 @@ export default function App() {
     }, 1000);
   };
 
+  const handleRestoreFromAvailableBackup = async () => {
+    if (!availableCloudBackup || !userState.email) return;
+    setIsSyncingBackup(true);
+    try {
+      const token = localStorage.getItem('session_id') || '';
+      const downloadResponse = await apiFetch(`/api/backup/download/${availableCloudBackup.filename}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-session-id': token
+        }
+      });
+      if (downloadResponse.ok) {
+        const payload = await downloadResponse.json();
+        if (payload && payload.data) {
+          const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
+          
+          isSyncingRef.current = true;
+          
+          const newCustomersKey = getStorageKey('customers_records');
+          const newProductsKey = getStorageKey('products_catalog');
+          
+          if (restCust) {
+            setCustomers(restCust);
+            localStorage.setItem(newCustomersKey, JSON.stringify(restCust));
+          }
+          if (restProd) {
+            setProducts(restProd);
+            localStorage.setItem(newProductsKey, JSON.stringify(restProd));
+          }
+          if (restLogs) {
+            setRestockLogs(restLogs || []);
+          }
+          
+          setTimeout(() => {
+            isSyncingRef.current = false;
+          }, 1000);
+          
+          console.log("🔄 Cross-Browser Sync: Manually restored latest ledger state from Yeedem servers.");
+          alert("Cloud backup successfully restored and synchronized!");
+          setAvailableCloudBackup(null);
+        }
+      } else {
+        alert("Failed to restore cloud backup. Status: " + downloadResponse.status);
+      }
+    } catch (err: any) {
+      console.error("Error manual sync backup restore:", err);
+      alert("Error restoring backup: " + (err.message || err));
+    } finally {
+      setIsSyncingBackup(false);
+    }
+  };
+
+  const handleStartFresh = async () => {
+    const isConfirmed = window.confirm(
+      "🧹 CONFIRM START FRESH\n\nThis will completely wipe your local browser ledger cache (all transaction records, customers, and products) to start completely clean.\n\nWould you also like to clear all pre-existing cloud backup files on the server for this email address to prevent any future database conflicts?"
+    );
+    if (!isConfirmed) return;
+
+    const email = userState.email || '';
+    const newCustomersKey = getStorageKey('customers_records');
+    const newProductsKey = getStorageKey('products_catalog');
+    
+    setCustomers([]);
+    setProducts([]);
+    setRestockLogs([]);
+    
+    localStorage.removeItem(newCustomersKey);
+    localStorage.removeItem(newProductsKey);
+    localStorage.removeItem(`last_daily_backup_date_${email}`);
+
+    setHasDismissedSyncPrompt(true);
+    setAvailableCloudBackup(null);
+
+    try {
+      const token = localStorage.getItem('session_id') || '';
+      const response = await apiFetch('/api/backup/wipe-all', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-session-id': token
+        }
+      });
+      if (response.ok) {
+        alert("Success! Your browser cache and cloud backups have been completely wiped. You are starting with a 100% fresh ledger!");
+      } else {
+        alert("Your local cache was wiped successfully, but we couldn't clear the server backups. You can still use your clean workspace.");
+      }
+    } catch (err: any) {
+      console.error("Error wiping server backups on start fresh:", err);
+      alert("Local cache wiped successfully. (Server backup prune error: " + (err.message || err) + ")");
+    }
+  };
+
   // Automated background scheduler checking hook on load
   useEffect(() => {
     if (userState.authenticated && userState.email && customers.length >= 0 && products.length >= 0) {
@@ -2714,11 +2820,11 @@ export default function App() {
   const isPublicScreen = ['landing', 'about', 'terms', 'privacy', 'login', 'guest_invoice', 'invoice_preview', 'terminal', 'reset_pin'].includes(activeScreen);
 
   useEffect(() => {
-    if (!userState.authenticated && !isPublicScreen) {
+    if (!authChecking && !userState.authenticated && !isPublicScreen) {
       // If guest tries to access private views, fallback to landing beautifully
       setActiveScreen('landing');
     }
-  }, [userState.authenticated, isPublicScreen]);
+  }, [authChecking, userState.authenticated, isPublicScreen]);
 
   if (isLedgerLocked) {
     return (
@@ -2835,7 +2941,7 @@ export default function App() {
     );
   }
 
-  if (userState.authenticated && !userState.onboarded) {
+  if (userState.authenticated && !userState.onboarded && !userState.skippedOnboarding) {
     const defaultEmail = userState.email?.includes('@') ? userState.email : (localStorage.getItem('prefilled_signup_email') || '');
     let defaultFullName = '';
     if (defaultEmail) {
@@ -3741,6 +3847,53 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {availableCloudBackup && !hasDismissedSyncPrompt && (
+              <div className="bg-indigo-50 border border-indigo-150 rounded-[20px] p-5 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl shrink-0">
+                    <Database className="w-6 h-6 text-[#00A6FF]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-[#0E1338]">Existing Cloud Backup Detected</h3>
+                    <p className="text-xs text-gray-500 mt-1 max-w-xl leading-relaxed">
+                      We found an existing cloud ledger backup for <span className="font-semibold text-gray-700">{userState.email}</span>.
+                      Since you are in <strong>Manual Sync mode</strong>, you can choose to restore your previous transactions, customers, and products now, or dismiss and start fresh.
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-1.5 font-mono">
+                      File: {availableCloudBackup.filename} ({new Date(availableCloudBackup.createdAt).toLocaleString()})
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto shrink-0 self-end md:self-center">
+                  <button
+                    type="button"
+                    onClick={handleStartFresh}
+                    className="flex-1 md:flex-none px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-600 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Start Fresh
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSyncingBackup}
+                    onClick={handleRestoreFromAvailableBackup}
+                    className="flex-1 md:flex-none px-4 py-2 bg-[#00A6FF] hover:bg-[#0086DD] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/10 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSyncingBackup ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Syncing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Restore Data</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 1. Quick Voice & Text Invoice Generator (FIRST SECTION) */}
             <div id="tour-smart-widget" className="animate-scaleIn w-full">

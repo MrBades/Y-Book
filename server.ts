@@ -82,11 +82,14 @@ app.use((req, res, next) => {
 });
 
 // Auto-synchronize local cached DB state with external PostgreSQL cloud storage under serverless/Vercel environments
-app.use((req, res, next) => {
-    // Fire-and-forget sync in the background so we NEVER block HTTP requests (especially on TLS timeouts/cold starts)
-    initAndSyncDatabase().catch(err => {
-        console.error("Background cloud database synchronization warning:", err);
-    });
+app.use(async (req, res, next) => {
+    try {
+        // Await the first sync to guarantee database records (users/sessions) are loaded
+        // before routing any requests. Subsequent requests resolve instantly.
+        await initAndSyncDatabase();
+    } catch (err) {
+        console.error("Database synchronization warning:", err);
+    }
     next();
 });
 
@@ -4402,6 +4405,34 @@ app.get("/api/backup/download/:filename", requireSession, (req, res) => {
     } catch (err: any) {
         console.error("Download backup error:", err);
         res.status(500).json({ error: err.message || "Failed to download backup file" });
+    }
+});
+
+app.post("/api/backup/wipe-all", requireSession, (req, res) => {
+    try {
+        const db = readDB();
+        const user_id = (req as any).user_id;
+        const user = db.users.find((u: any) => u.id === user_id);
+        if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+        const email = user.phone_or_email || "anonymous";
+        const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
+
+        let deletedCount = 0;
+        if (fs.existsSync(BACKUPS_DIR)) {
+            const files = fs.readdirSync(BACKUPS_DIR);
+            const userBackupFiles = files.filter(f => f.startsWith(`backup_${safeEmail}_`) && f.endsWith('.json'));
+            for (const file of userBackupFiles) {
+                const filePath = path.join(BACKUPS_DIR, file);
+                fs.unlinkSync(filePath);
+                deletedCount++;
+            }
+        }
+
+        res.json({ status: "success", message: `All ${deletedCount} cloud backup archives cleared successfully.` });
+    } catch (err: any) {
+        console.error("Wipe all backups error:", err);
+        res.status(500).json({ error: err.message || "Failed to wipe backups" });
     }
 });
 

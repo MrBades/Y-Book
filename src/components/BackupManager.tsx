@@ -55,21 +55,29 @@ export default function BackupManager({
   const [searchQuery, setSearchQuery] = useState('');
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
   const [syncTime, setSyncTime] = useState('18:00');
+  const [syncMode, setSyncMode] = useState<'manual' | 'automatic'>('manual');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load user settings
   useEffect(() => {
     const savedAutoSync = localStorage.getItem(`auto_sync_enabled_${userEmail}`);
     const savedSyncTime = localStorage.getItem(`sync_time_${userEmail}`);
+    const savedSyncMode = localStorage.getItem(`ledger_sync_mode_${userEmail}`);
     if (savedAutoSync !== null) setAutoSyncEnabled(JSON.parse(savedAutoSync));
     if (savedSyncTime !== null) setSyncTime(savedSyncTime);
+    if (savedSyncMode === 'automatic' || savedSyncMode === 'manual') {
+      setSyncMode(savedSyncMode);
+    } else {
+      setSyncMode('manual');
+    }
   }, [userEmail]);
 
   // Save user settings
   useEffect(() => {
     localStorage.setItem(`auto_sync_enabled_${userEmail}`, JSON.stringify(autoSyncEnabled));
     localStorage.setItem(`sync_time_${userEmail}`, syncTime);
-  }, [autoSyncEnabled, syncTime, userEmail]);
+    localStorage.setItem(`ledger_sync_mode_${userEmail}`, syncMode);
+  }, [autoSyncEnabled, syncTime, syncMode, userEmail]);
 
   // Load backups timeline
   const fetchServerBackups = async () => {
@@ -294,6 +302,63 @@ export default function BackupManager({
     }
   };
 
+  const handleWipeLocalLedger = () => {
+    const isConfirmed = window.confirm(
+      "⚠️ WARNING: CLEAR LOCAL ACTIVE LEDGER\n\nThis will completely empty your active transaction logs, customer records, and product catalog inside this browser cache.\n\nAre you sure you want to proceed?"
+    );
+    if (!isConfirmed) return;
+
+    onRestoreBackup({
+      customers: [],
+      products: [],
+      restockLogs: []
+    });
+
+    setActionStatus({
+      type: 'success',
+      message: 'Active local browser ledger cache cleared successfully. You are starting fresh!'
+    });
+  };
+
+  const handleWipeServerBackups = async () => {
+    const isConfirmed = window.confirm(
+      "⚠️ CRITICAL DANGER: DELETE ALL CLOUD BACKUPS\n\nThis will permanently delete ALL rolling automated and manual backup files stored on Yeedem servers for your email. This action cannot be reversed.\n\nAre you sure you want to proceed?"
+    );
+    if (!isConfirmed) return;
+
+    setIsLoading(true);
+    setActionStatus({ type: 'info', message: 'Pruning all cloud archives from server disks...' });
+
+    try {
+      const token = localStorage.getItem('session_id') || '';
+      const response = await apiFetch('/api/backup/wipe-all', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-session-id': token
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setActionStatus({
+          type: 'success',
+          message: data.message || 'All cloud backups deleted successfully.'
+        });
+        fetchServerBackups();
+      } else {
+        throw new Error('Failed to clear server backups. Server returned status: ' + response.status);
+      }
+    } catch (err: any) {
+      setActionStatus({
+        type: 'error',
+        message: err.message || 'Error occurred while deleting cloud backups.'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Drag and drop custom backup restore
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -443,6 +508,71 @@ export default function BackupManager({
             />
           </div>
         )}
+      </div>
+
+      {/* Cloud Restore / Sync Mode (On Login) */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <span className="text-xs font-bold text-[#0E1338] block">Cloud Restore / Sync Mode (On Login)</span>
+          <p className="text-[10px] text-gray-400">
+            Controls if your server cloud backups should restore automatically on login/reinstall or require manual approval.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSyncMode('manual')}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
+              syncMode === 'manual' 
+                ? 'bg-[#0E1338] text-white border-[#0E1338] shadow-sm' 
+                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            Manual Sync (Recommended)
+          </button>
+          <button
+            type="button"
+            onClick={() => setSyncMode('automatic')}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
+              syncMode === 'automatic' 
+                ? 'bg-[#00A6FF] text-white border-[#00A6FF] shadow-sm shadow-[#00A6FF]/25' 
+                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            Auto-Restore
+          </button>
+        </div>
+      </div>
+
+      {/* Dangerous Operations / Reset Zone */}
+      <div className="bg-red-50/20 p-5 rounded-2xl border border-red-100 space-y-4">
+        <div className="space-y-0.5">
+          <span className="text-xs font-bold text-red-700 flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4" />
+            Disaster Zone / Dangerous Operations
+          </span>
+          <p className="text-[10px] text-gray-500">
+            Use these controls if you have recently wiped the server database, created a new merchant account, or want to start completely from scratch.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleWipeLocalLedger}
+            className="px-4 py-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear Local Active Ledger</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleWipeServerBackups}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Prune All Cloud Backups</span>
+          </button>
+        </div>
       </div>
 
       {actionStatus && (

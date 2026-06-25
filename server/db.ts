@@ -22,13 +22,13 @@ if (process.env.DATABASE_URL) {
         let dbUrl = process.env.DATABASE_URL.trim();
         if (dbUrl) {
             if (dbUrl.includes('sslmode=')) {
-                // Explicitly use sslmode=verify-full as mandated by pg warning to avoid insecure fallback warning
-                dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=verify-full');
+                // Explicitly use sslmode=require to avoid insecure fallback warning while allowing rejectUnauthorized: false to work correctly
+                dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=require');
             } else {
                 if (dbUrl.includes('?')) {
-                    dbUrl += '&sslmode=verify-full';
+                    dbUrl += '&sslmode=require';
                 } else {
-                    dbUrl += '?sslmode=verify-full';
+                    dbUrl += '?sslmode=require';
                 }
             }
         }
