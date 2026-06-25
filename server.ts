@@ -3421,7 +3421,8 @@ app.get("/api/staff", requireSession, (req, res) => {
     try {
         const user_id = (req as any).user_id;
         const session = (req as any).session;
-        if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
+        if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+        if (session && session.is_staff) return res.status(403).json({ error: "Access denied: Staff terminals cannot access administrative settings." });
 
         const db = readDB();
         const users = db.users || [];
@@ -3468,7 +3469,8 @@ app.get("/api/staff/log", requireSession, (req, res) => {
     try {
         const user_id = (req as any).user_id;
         const session = (req as any).session;
-        if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
+        if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+        if (session && session.is_staff) return res.status(403).json({ error: "Access denied: Staff terminals cannot access administrative settings." });
 
         const db = readDB();
         const logs = (db.staffActivityLogs || []).filter((l:any) => l && l.user_id === user_id);
@@ -3483,7 +3485,8 @@ app.post("/api/staff", requireSession, (req, res) => {
     try {
         const user_id = (req as any).user_id;
         const session = (req as any).session;
-        if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
+        if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+        if (session && session.is_staff) return res.status(403).json({ error: "Access denied: Staff terminals cannot access administrative settings." });
 
         const db = readDB();
         const user = db.users.find((u: any) => u.id === user_id);
@@ -3541,7 +3544,8 @@ app.put("/api/staff/:id", requireSession, (req, res) => {
         const db = readDB();
         const user_id = (req as any).user_id;
         const session = (req as any).session;
-        if (!user_id || (session && session.is_staff)) return res.status(401).json({ error: "Unauthorized" });
+        if (!user_id) return res.status(401).json({ error: "Unauthorized" });
+        if (session && session.is_staff) return res.status(403).json({ error: "Access denied: Staff terminals cannot access administrative settings." });
 
         if (!db.staff) db.staff = [];
         const index = db.staff.findIndex((s: any) => s && s.id === req.params.id && s.user_id === user_id);
