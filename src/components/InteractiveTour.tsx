@@ -45,56 +45,70 @@ export default function InteractiveTour({
 
   const steps = useMemo<TourStep[]>(() => [
     {
-      title: `Welcome to ${activeBiz}!`,
-      description: "Let's take a quick 1-minute interactive tour to look at how Yeedem Books automates SME bookkeeping, profit margin tracking, and automated client credit alerts.",
+      title: `Meet ${activeBiz}: Your SME Accounting Hub!`,
+      description: "Welcome to your comprehensive premium cloud-synced ledger. This custom platform centralizes your retail sales, wholesale unit costs, uncollected receivables, and low-stock alarms in one single, cohesive, supercharged view. Designed for micro-traders, shop clerks, and managers, Yeedem eliminates legacy spreadsheet complexity.",
       screen: 'dashboard',
-      icon: Award
+      icon: BookOpen
     },
     {
-      title: "Smart Ledgers & Automated Parsing",
-      description: "Type single sentences like 'sold 3 bags of premium rice to Mr Suleman today' or draft files. Our heuristic pattern-matching engines will instantly decode item quantities, calculate ledgers, and index client debt profiles without manual inventory lookups.",
+      title: "Automated NLP Bookkeeping (Heuristic Smart Entries)",
+      description: "Simply type any normal sentence like 'sold 5 bags of rice to John' or 'received 25k from Ada for garri'. The system's robust pattern-matching parser immediately extracts quantities, matches items against your inventory catalog, calculates selling prices, updates stock counts, and indexes client debit profiles instantly without manual product search fields!",
       targetId: "tour-smart-widget",
       screen: 'dashboard',
       icon: Sparkles
     },
     {
-      title: "Real-Time Cash Registers",
-      description: "Track your cash collections, uncollected debtor credit lines, and estimated margin markups in real-time. This metric ribbon automatically syncs to represent today's trading pulse.",
+      title: "Active Trade Metrics Ribbon (Daily Pulse)",
+      description: "Keep a firm finger on your daily trading pulse. The top stats ribbon counts your total cash collections, uncollected debtor credit lines, and estimated gross margin markup counts for today. This ensures you know exactly how much physical cash is in your drawer versus what is still outstanding.",
       targetId: "tour-daily-pulse",
       screen: 'dashboard',
       icon: TrendingUp
     },
     {
-      title: "Historical Profit Trend Analytics",
-      description: "This advanced Recharts area graph monitors your sales minus raw wholesale unit costs and debits across the last 30 days to plot your verifiably accurate true net earnings.",
+      title: "Interactive Sales & Margin Analysis Graph",
+      description: "View true net earnings dynamically. By comparing your retail sales prices against original wholesale cost prices across transaction items, this graph tracks your verifiably accurate true net profits over a rolling 30-day window. For service offerings, it tracks complete cash collections minus operational charges.",
       targetId: "tour-net-profit-chart",
       screen: 'dashboard',
       icon: Database
     },
     {
-      title: "Client Credit & Automated Reminders",
-      description: "Manage client debt records and send instant, customized SMS or WhatsApp reminders listing the recipient's precise uncollected balance and your business name with professional layout templates.",
+      title: "Merchant Credit Records & Debtor Lists",
+      description: "Access your comprehensive Debtors directory to examine outstanding customer credits. Here, you can easily add debtor profiles, track partial deposits/repayments, adjust billing references, or append private store notes. All balances are updated in real-time across connected staff terminals.",
       targetId: "tour-debtors-section",
       screen: 'debtors',
       icon: Smartphone
     },
     {
-      title: "Ledger Registry & Audit Trials",
-      description: "Search, print, or review tax-cleared bookkeeping items. Drill down into printable transaction reports or cleared invoicing formats in seconds.",
+      title: "Automated WhatsApp & SMS Client Reminders",
+      description: "Retrieve uncollected receivables up to 3x faster with integrated communication launchers. Simply click the contact link next to any debtor profile to open WhatsApp or draft SMS templates pre-filled with the customer's name, uncollected balance, and professional payment reminders.",
+      targetId: "tour-debtors-section",
+      screen: 'debtors',
+      icon: Smartphone
+    },
+    {
+      title: "Inventory Catalog & Wholesale Profit Margins",
+      description: "Maintain complete control over physical stockpiles or cataloged service offerings. Inside the Products tab, configure item wholesale purchase costs, retail selling prices, and minimum low-stock alert thresholds. Almad-triggers automatically flag declining stocks on your dashboard to guide orders.",
+      targetId: "tour-products-section",
+      screen: 'products',
+      icon: Database
+    },
+    {
+      title: "Invoices Registry & Multi-Theme Receipt Clearance",
+      description: "Search, print, or review tax-cleared sales logs from your secure ledger archive. When exporting PDF invoices, choose from three beautiful design layouts: Classic (monochrome elegance), Modern Blue (clean beach-accented visual), or Kiosk Compact (tailored specifically for neat 58mm mobile thermal roll printers).",
       targetId: "tour-invoice-registry",
       screen: 'invoices',
       icon: Search
     },
     {
-      title: "SafeGuard Backup & Protection",
-      description: "Maintain bulletproof business safety. Back up all customers, prices, and ledger lines into local encryption packs or restore previous state registries anytime.",
+      title: "SafeGuard Protection, SSL & Offline Backups",
+      description: "Your business secrets are fully firewalled. From your Settings workspace, you can trigger encrypted local file backup downloads of your entire product catalog, debtors book, and transactional cash ledger. Instantly restore previous states or purge database memory lines in a single click for complete privacy.",
       targetId: "tour-backup-manager",
       screen: 'profile',
       icon: ShieldCheck
     },
     {
-      title: "All Set & Ready to Go!",
-      description: `You are officially trained to use ${activeBiz}. Start recording transactions today to watch your SME bookkeeping flow effortlessly.`,
+      title: "All Trained & Ready to Trade!",
+      description: `You have successfully completed the comprehensive onboarding tutorial! You are now prepared to log transactions, manage inventory, send reminders, and track profit trends. Start recording right now to watch your retail enterprise run and scale up effortlessly!`,
       screen: 'dashboard',
       icon: Award
     }

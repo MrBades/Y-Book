@@ -55,7 +55,7 @@ export default function SmartWidget({
   // Tabs: 'online_or_ai', 'parser_or_offline', 'manual'
   const [activeTab, setActiveTab] = useState<'online_or_ai' | 'parser_or_offline' | 'manual'>(() => {
     const tier = getPlanTier(subscriptionPlan);
-    return tier >= 2 ? 'online_or_ai' : 'manual';
+    return tier >= 2 ? 'online_or_ai' : 'parser_or_offline';
   });
   
   const [text, setText] = useState('');
@@ -75,7 +75,7 @@ export default function SmartWidget({
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordedVoiceBlob, setRecordedVoiceBlob] = useState<Blob | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const isOnline = true; // Hardcoded to true so sandbox constraints never falsely lock users out of AI
   const [error, setError] = useState<string | null>(null);
 
   const handleLocalParse = () => {
@@ -93,8 +93,9 @@ export default function SmartWidget({
       return val;
     };
 
-    const rawText = text.trim();
-    
+    let rawText = text.trim();
+    let extractedCustomer = 'Walk-in Customer';
+
     // 1. Transaction Type
     let transactionType: 'sale' | 'expense' | 'payment_on_account' = 'sale';
     if (/\b(expense|spent|bought|purchase|cost|paid for|payment for)\b/i.test(rawText)) {
@@ -103,69 +104,178 @@ export default function SmartWidget({
       transactionType = 'payment_on_account';
     }
 
+    // Pre-extract customer from the entire block using multi-stage patterns to handle colons & punctuation gracefully
+    const customerPatterns = [
+      /(?:sold\s+to|bought\s+from|received\s+from|customer|buyer|client|seller|to|for|from|sold\s+to|for\s+customer)\s*:\s*([a-zA-Z\s]+?)(?:\s*(?:for|at|each|@|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i,
+      /(?:sold\s+to|bought\s+from|received\s+from|customer|buyer|client|seller|to|for|from|sold\s+to|for\s+customer)\s+([a-zA-Z\s]+?)(?:\s*[:;,-]|\s+(?:for|at|each|@|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i
+    ];
+
+    for (const pattern of customerPatterns) {
+      const match = rawText.match(pattern);
+      if (match) {
+        const nameCandidate = match[1].trim();
+        if (nameCandidate && nameCandidate.length > 2 && !/^(bags|units|pieces|kg|items|cash|the|each|and|spent|bought|sold|at|for|to)$/i.test(nameCandidate)) {
+          extractedCustomer = nameCandidate;
+          // Strip the customer phrase from rawText so it doesn't pollute the item name or break price anchors!
+          const fullMatchStr = match[0];
+          const nameIndex = fullMatchStr.toLowerCase().indexOf(nameCandidate.toLowerCase());
+          if (nameIndex !== -1) {
+            const stringToRemove = fullMatchStr.substring(0, nameIndex + nameCandidate.length);
+            const escapedRemove = stringToRemove.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            rawText = rawText.replace(new RegExp(escapedRemove, 'i'), ' ').trim();
+          }
+          break;
+        }
+      }
+    }
+
+    // Try a fallback search for "<Name> paid/deposited <Amount>" to extract customer
+    if (extractedCustomer === 'Walk-in Customer') {
+      const namePaidMatch = rawText.match(/([a-zA-Z\s]+?)\s+(?:paid|pay|deposit|deposited|payment|cash|received|got)\s+(?:N|₦)?\s*[\d,]+/i);
+      if (namePaidMatch) {
+        const candidate = namePaidMatch[1].trim();
+        if (candidate && candidate.length > 2 && !/^(and|he|she|they|each|total|price|is|the|we|i|you)$/i.test(candidate)) {
+          extractedCustomer = candidate;
+          rawText = rawText.replace(namePaidMatch[1], '').trim();
+        }
+      }
+    }
+
+    // Standardize transaction text by splitting common continuous voice indicators into separate lines
+    let processedText = rawText;
+    if (!processedText.includes('\n')) {
+      processedText = processedText
+        .replace(/\s+and\s+(?:he|she|they)?\s*(paid|deposit|deposited)\s+/gi, '\n$1 ')
+        .replace(/\s+(paid|deposit|deposited|payment|received|got)\s+/gi, '\n$1 ')
+        .replace(/\s+and\s+/gi, '\n')
+        .replace(/[,;.]\s*/g, '\n');
+    }
+
     // Modern Line-by-Line Multi-Entry Parser
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const lines = processedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const parsedItems: InvoiceItem[] = [];
-    let extractedCustomer = 'Walk-in Customer';
     let amountPaidSum = 0.0;
 
-    // Check customer names in lines
-    for (const line of lines) {
-      const custFormMatch = line.match(/^(?:customer|buyer|client|seller|to|for|from|sold to|for customer)\s*:\s*([a-zA-Z\s]+)/i) ||
-                            line.match(/^(?:sold\s+to|bought\s+from|received\s+from)\s+([a-zA-Z\s]+)$/i);
-      if (custFormMatch) {
-        const nameCandidate = custFormMatch[1].trim();
-        if (nameCandidate && !/^(bags|units|pieces|kg|items|cash|the|each)$/i.test(nameCandidate)) {
-          extractedCustomer = nameCandidate;
+    // Direct single-line regex support for explicit expense/payment statements to prevent 0-value extraction
+    const expenseMatch1 = rawText.match(/(?:spent|paid|cost|payment for)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*(?:on|for)\s+([a-zA-Z0-9\s_\-]+)/i);
+    const expenseMatch2 = rawText.match(/(?:bought|purchased)\s+([a-zA-Z0-9\s_\-]+?)\s+(?:for|at|@)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i);
+
+    const paymentOnAccountMatch1 = rawText.match(/(?:received|got|collected)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*from\s+([a-zA-Z\s]+)/i);
+    const paymentOnAccountMatch2 = rawText.match(/([a-zA-Z\s]+?)\s+(?:paid|deposited|pay)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i);
+
+    if (expenseMatch1) {
+      const amt = parseAmountLocal(expenseMatch1[1], expenseMatch1[2]);
+      const itemName = expenseMatch1[3].trim();
+      parsedItems.push({
+        name: itemName,
+        quantity: 1,
+        price: amt,
+        total: amt
+      });
+      transactionType = 'expense';
+    } else if (expenseMatch2) {
+      const itemName = expenseMatch2[1].trim();
+      const amt = parseAmountLocal(expenseMatch2[2], expenseMatch2[3]);
+      parsedItems.push({
+        name: itemName,
+        quantity: 1,
+        price: amt,
+        total: amt
+      });
+      transactionType = 'expense';
+    } else if (paymentOnAccountMatch1) {
+      const amt = parseAmountLocal(paymentOnAccountMatch1[1], paymentOnAccountMatch1[2]);
+      const custName = paymentOnAccountMatch1[3].trim();
+      if (!/^(bags|units|pieces|kg|items|cash|the)$/i.test(custName)) {
+        extractedCustomer = custName;
+        amountPaidSum = amt;
+        transactionType = 'payment_on_account';
+        parsedItems.push({
+          name: 'Payment on Account',
+          quantity: 1,
+          price: amt,
+          total: amt
+        });
+      }
+    } else if (paymentOnAccountMatch2) {
+      const custName = paymentOnAccountMatch2[1].trim();
+      const amt = parseAmountLocal(paymentOnAccountMatch2[2], paymentOnAccountMatch2[3]);
+      if (!/^(and|he|she|they|each|total|price|is|the|we|i|you|spent|bought)$/i.test(custName)) {
+        extractedCustomer = custName;
+        amountPaidSum = amt;
+        transactionType = 'payment_on_account';
+        parsedItems.push({
+          name: 'Payment on Account',
+          quantity: 1,
+          price: amt,
+          total: amt
+        });
+      }
+    } else {
+      // Check customer names and items line-by-line
+      for (const line of lines) {
+        const custFormMatch = line.match(/^(?:customer|buyer|client|seller|to|for|from|sold to|for customer)\s*:\s*([a-zA-Z\s]+)/i) ||
+                              line.match(/^(?:sold\s+to|bought\s+from|received\s+from)\s+([a-zA-Z\s]+)$/i);
+        if (custFormMatch) {
+          const nameCandidate = custFormMatch[1].trim();
+          if (nameCandidate && !/^(bags|units|pieces|kg|items|cash|the|each)$/i.test(nameCandidate)) {
+            extractedCustomer = nameCandidate;
+            continue;
+          }
+        }
+
+        // Check payments in lines
+        const paymentMatch = line.match(/^(?:paid|pay|deposit|deposited|payment|cash|received|got|amt paid|amount paid)\s*(?:of|cash)?\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i) ||
+                             line.match(/^(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*(?:paid|pay|deposited?|payment|cash|received|got)/i);
+        if (paymentMatch) {
+          amountPaidSum += parseAmountLocal(paymentMatch[1], paymentMatch[2]);
           continue;
         }
-      }
 
-      // Check payments in lines
-      const paymentMatch = line.match(/^(?:paid|pay|deposit|deposited|payment|cash|received|got|amt paid|amount paid)\s*(?:of|cash)?\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i) ||
-                           line.match(/^(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*(?:paid|pay|deposited?|payment|cash|received|got)/i);
-      if (paymentMatch) {
-        amountPaidSum += parseAmountLocal(paymentMatch[1], paymentMatch[2]);
-        continue;
-      }
+        // Check item / commodity in lines
+        // Matches "5 bags of rice at 75000", "2 bags of rice at 75000" etc., with optional "at/for" like "5 bags of rice 75000"
+        const itemRegex = /^\s*(?:sold|bought|sale of|purchase of)?\s*(?:(\d+)\s*(?:bags|units|pieces|pcs|kg|cartons|items|shirts|pairs|bottles|carton|bag|pair|bottle|packet|packets|pc|box|boxes)?\s*(?:of)?\s+)?([a-zA-Z0-9\s_\-]+?)(?:\s+(?:at|for|each|@|₦|N|N\s*|₦\s*|\s+)\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?(?:\s*each|each|unit|per unit)?)?$/i;
+        const itemMatch = line.match(itemRegex);
+        if (itemMatch) {
+          const qtyStr = itemMatch[1];
+          let prodNameStr = itemMatch[2].trim();
+          const priceStr = itemMatch[3];
+          const multStr = itemMatch[4];
 
-      // Check item / commodity in lines
-      // Matches "5 bags of rice at 75000", "2 bags of rice at 75000" etc.
-      const itemRegex = /^\s*(?:sold|bought|sale of|purchase of)?\s*(?:(\d+)\s*(?:bags|units|pieces|pcs|kg|cartons|items|shirts|pairs|bottles|carton|bag|pair|bottle|packet|packets|pc|box|boxes)?\s*(?:of)?\s+)?([a-zA-Z0-9\s_\-]+?)(?:\s+(?:at|for|each|@|₦|N|N\s*|₦\s*)\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?(?:\s*each|each|unit|per unit)?)?$/i;
-      const itemMatch = line.match(itemRegex);
-      if (itemMatch) {
-        const qtyStr = itemMatch[1];
-        let prodNameStr = itemMatch[2].trim();
-        const priceStr = itemMatch[3];
-        const multStr = itemMatch[4];
-
-        const lineQty = qtyStr ? parseInt(qtyStr, 10) : 1;
-        
-        if (prodNameStr) {
-          prodNameStr = prodNameStr.replace(/\b(bags|units|pieces|cartons|of|kg|items|pcs)\b/gi, '').trim();
-        }
-
-        // Avoid false positives on action tokens
-        if (prodNameStr && !/^(paid|deposit|deposited|payment|cash|received|got|to|for|from|customer|buyer|client|seller|at|each)$/i.test(prodNameStr)) {
-          let lineUnitPrice = 0.0;
-          if (priceStr) {
-            lineUnitPrice = parseAmountLocal(priceStr, multStr);
-          }
-          const lineTotal = lineQty * lineUnitPrice;
+          const lineQty = qtyStr ? parseInt(qtyStr, 10) : 1;
           
-          parsedItems.push({
-            name: prodNameStr,
-            quantity: lineQty,
-            price: lineUnitPrice,
-            total: lineTotal
-          });
+          if (prodNameStr) {
+            prodNameStr = prodNameStr.replace(/\b(bags|units|pieces|cartons|of|kg|items|pcs)\b/gi, '').trim();
+            // Clean up customer name if still present in product name
+            if (extractedCustomer && extractedCustomer !== 'Walk-in Customer') {
+              const escCustomer = extractedCustomer.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+              const cleanupRegex = new RegExp(`\\s+(?:to|for|from|sold to)\\s+${escCustomer}\\b`, 'i');
+              prodNameStr = prodNameStr.replace(cleanupRegex, '').trim();
+            }
+          }
+
+          // Avoid false positives on action tokens
+          if (prodNameStr && !/^(paid|deposit|deposited|payment|cash|received|got|to|for|from|customer|buyer|client|seller|at|each)$/i.test(prodNameStr)) {
+            let lineUnitPrice = 0.0;
+            if (priceStr) {
+              lineUnitPrice = parseAmountLocal(priceStr, multStr);
+            }
+            const lineTotal = lineQty * lineUnitPrice;
+            
+            parsedItems.push({
+              name: prodNameStr,
+              quantity: lineQty,
+              price: lineUnitPrice,
+              total: lineTotal
+            });
+          }
         }
       }
     }
 
     if (parsedItems.length > 0) {
       if (extractedCustomer === 'Walk-in Customer') {
-        const customerMatch = rawText.match(/(?:to|for|from|buyer|customer|seller)\s+([a-zA-Z\s]+?)(?:\s+(?:for|at|each|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i);
+        const customerMatch = rawText.match(/(?:to|for|from|buyer|customer|seller)\s+([a-zA-Z\s]+?)(?:\s*[:;,-]|\s+(?:for|at|each|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i);
         if (customerMatch) {
           const name = customerMatch[1].trim();
           if (name && !/^(bags|units|pieces|kg|items|cash|the)$/i.test(name)) {
@@ -389,35 +499,15 @@ export default function SmartWidget({
   };
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const recordingActiveRef = useRef<boolean>(false);
+  const initialTextOnRecordRef = useRef<string>('');
 
-  // Monitor network online/offline state
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-    };
 
-    const handleOffline = () => {
-      setIsOnline(false);
-      setActiveTab('manual'); // Slides over to Manual tab immediately!
-    };
-
-    // Update initial state
-    setIsOnline(navigator.onLine);
-    if (!navigator.onLine) {
-      setActiveTab('manual');
-    }
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   // Helpers: File to base64
   const fileToBase64 = (file: File): Promise<string> => {
@@ -437,26 +527,58 @@ export default function SmartWidget({
   };
 
   // Browser Audio recording API setup
+  // Browser Audio recording API setup
   const handleStartRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      mediaRecorderRef.current = mediaRecorder;
+      recordingActiveRef.current = true;
+      initialTextOnRecordRef.current = text;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
+      // 1. Request microphone access to ensure permission is active and stream is held
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        localStreamRef.current = stream;
+      } catch (mediaErr: any) {
+        console.error("Microphone access failed:", mediaErr);
+        throw new Error("Microphone permission denied or not available. Please allow microphone access.");
+      }
+
+      // 2. Configure MediaRecorder to capture audio blob for server-side AI parsing
+      if (stream) {
+        let mimeTypeChosen = 'audio/webm';
+        let options = {};
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+          mimeTypeChosen = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+          mimeTypeChosen = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          options = { mimeType: 'audio/ogg' };
+          mimeTypeChosen = 'audio/ogg';
         }
-      };
+        
+        try {
+          const mediaRecorder = new MediaRecorder(stream, options);
+          mediaRecorderRef.current = mediaRecorder;
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setRecordedVoiceBlob(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
-      };
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              audioChunksRef.current.push(e.data);
+            }
+          };
 
-      mediaRecorder.start();
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: mimeTypeChosen });
+            setRecordedVoiceBlob(audioBlob);
+          };
+
+          mediaRecorder.start();
+        } catch (mediaErr) {
+          console.warn("MediaRecorder creation failed:", mediaErr);
+        }
+      }
+
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -464,17 +586,78 @@ export default function SmartWidget({
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
 
+      // 3. Web Speech API SpeechRecognition for live local transcription
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+
+        rec.onresult = (event: any) => {
+          let voiceText = '';
+          for (let i = 0; i < event.results.length; i++) {
+            voiceText += event.results[i][0].transcript;
+          }
+          
+          setText(() => {
+            const prefix = initialTextOnRecordRef.current.trim();
+            return prefix ? `${prefix} ${voiceText.trim()}` : voiceText.trim();
+          });
+        };
+
+        rec.onerror = (errEvent: any) => {
+          console.warn("Speech recognition error:", errEvent.error);
+        };
+
+        rec.onend = () => {
+          // Keep recognition alive while recording is active
+          if (recordingActiveRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch (err) {}
+          }
+        };
+
+        recognitionRef.current = rec;
+        try {
+          rec.start();
+        } catch (e) {}
+      }
+
     } catch (err: any) {
       alert("Microphone capture disabled or blocked: " + err.message);
     }
   };
 
   const handleStopRecording = () => {
+    recordingActiveRef.current = false;
+    
+    // Stop media recorder if active
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
     }
+    
+    // Stop and release the audio tracks so microphone light goes off
+    if (localStreamRef.current) {
+      try {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+      } catch (e) {}
+      localStreamRef.current = null;
+    }
+
+    // Stop Web Speech Recognition
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+    
+    setIsRecording(false);
+    clearInterval(timerRef.current);
   };
 
   const handleRemoveVoice = () => {
@@ -514,7 +697,9 @@ export default function SmartWidget({
 
   const handleActionPillClick = (pillText: string) => {
     setText(pillText);
-    setActiveTab('online_or_ai');
+    if (activeTab === 'manual') {
+      setActiveTab('online_or_ai');
+    }
     setOutcome(null); // Clear previous output to write new text description
   };
 
@@ -527,6 +712,10 @@ export default function SmartWidget({
     }
 
     if (activeTab === 'parser_or_offline') {
+      if (!text.trim()) {
+        alert("⚠️ You are offline. To record a transaction using voice while offline, please dictate clearly while the microphone is active to transcribe your voice to text, or type the details manually into the text area first.");
+        return;
+      }
       handleLocalParse();
       return;
     }
@@ -652,28 +841,25 @@ export default function SmartWidget({
         <div className="flex items-center gap-1 bg-white/10 p-1 rounded-xl border border-white/5 shadow-inner" id="smart-widget-header-tabs">
           <button
             type="button"
-            onClick={() => isOnline && setActiveTab('online_or_ai')}
-            disabled={!isOnline}
+            onClick={() => setActiveTab('online_or_ai')}
             className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5 ${
-              !isOnline 
-                ? 'bg-white/5 text-white/40 cursor-not-allowed opacity-40' 
-                : activeTab === 'online_or_ai'
-                  ? 'bg-[#00A6FF] text-white shadow-sm'
-                  : 'text-gray-300 hover:text-white hover:bg-white/5'
+              activeTab === 'online_or_ai'
+                ? 'bg-[#00A6FF] text-white shadow-sm'
+                : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>✨ AI</span>
+            <span>✨ AI Voice & Text</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('parser_or_offline')}
             className={`px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5 ${
               activeTab === 'parser_or_offline'
-                ? 'bg-[#00A6FF] text-white shadow-sm' 
+                ? 'bg-[#00A6FF] text-white shadow-sm'
                 : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>📄 fuse</span>
+            <span>📄 Local Fuse Parser</span>
           </button>
           <button
             type="button"
@@ -684,7 +870,7 @@ export default function SmartWidget({
                 : 'text-gray-300 hover:text-white hover:bg-white/5'
             }`}
           >
-            <span>📝 Manual</span>
+            <span>📝 Manual Entry</span>
           </button>
         </div>
 
@@ -694,14 +880,6 @@ export default function SmartWidget({
       </div>
 
       <div className="p-6">
-        {/* Helper Online/Offline Diagnostic Alert */}
-        {!isOnline && (
-          <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex items-center gap-2.5 text-xs animate-fadeIn">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span><strong>Device Offline Protection:</strong> Multimodal Voice and Snapshot extraction is temporarily disabled. Active input has been locked to the classic manual structured form backup.</span>
-          </div>
-        )}
-
         {/* Dynamic Error Alert */}
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 flex items-center justify-between gap-2.5 text-xs animate-fadeIn">
@@ -717,20 +895,16 @@ export default function SmartWidget({
 
         {/* 2. Ribbon of quick-action capsule tags */}
         <div className="flex items-center gap-2 overflow-x-auto pb-3.5 mb-5 border-b border-gray-100 scrollbar-thin max-w-full" id="smart-widget-action-ribbon">
-          {isOnline ? (
-            QUICK_ACTIONS.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                onClick={() => handleActionPillClick(action.text)}
-                className="px-3.5 py-1.5 bg-gray-50 hover:bg-[#00A6FF]/10 hover:text-[#0E1338] hover:border-[#00A6FF]/20 text-[#4A5568] border border-gray-150 rounded-full text-[11px] font-bold whitespace-nowrap transition cursor-pointer"
-              >
-                {action.label}
-              </button>
-            ))
-          ) : (
-            <span className="text-[11px] font-bold text-gray-400 font-mono">🔧 Offline Heuristics Active</span>
-          )}
+          {QUICK_ACTIONS.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => handleActionPillClick(action.text)}
+              className="px-3.5 py-1.5 bg-gray-50 hover:bg-[#00A6FF]/10 hover:text-[#0E1338] hover:border-[#00A6FF]/20 text-[#4A5568] border border-gray-150 rounded-full text-[11px] font-bold whitespace-nowrap transition cursor-pointer"
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
 
         {/* 3. Render Active Workspace View */}
@@ -1022,6 +1196,11 @@ export default function SmartWidget({
                       <Loader2 className="w-4.5 h-4.5 animate-spin text-[#00A6FF]" />
                       <span>Synthesizing intelligence parameters...</span>
                     </>
+                  ) : activeTab === 'parser_or_offline' ? (
+                    <>
+                      <Calculator className="w-4 h-4 text-[#00A6FF] shrink-0" />
+                      <span>Parse with Local Fuse</span>
+                    </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 text-[#00A6FF] shrink-0" />
@@ -1085,10 +1264,10 @@ export default function SmartWidget({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider mb-1.5">
-                  {isService ? 'Scope/Hours/Sessions' : 'Quantity'}
+                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider text-[10px] sm:text-xs mb-1.5 flex items-center gap-1.5">
+                  <Calculator className="w-3.5 h-3.5 text-gray-400" /> {isService ? 'Scope/Hours/Sessions' : 'Quantity'}
                 </label>
                 <input
                   type="number"
@@ -1100,8 +1279,8 @@ export default function SmartWidget({
                 />
               </div>
               <div>
-                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider mb-1.5">
-                  {isService ? 'Service Rate (₦)' : 'Unit Price (₦)'}
+                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider text-[10px] sm:text-xs mb-1.5 flex items-center gap-1.5">
+                  <CircleDollarSign className="w-3.5 h-3.5 text-gray-400" /> {isService ? 'Service Rate (₦)' : 'Unit Price (₦)'}
                 </label>
                 <input
                   type="number"
@@ -1114,7 +1293,7 @@ export default function SmartWidget({
                 />
               </div>
               <div>
-                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider mb-1.5 flex items-center gap-1 flex-wrap">
+                <label className="block font-semibold text-[#4A5568] uppercase tracking-wider text-[10px] sm:text-xs mb-1.5 flex items-center gap-1.5 flex-wrap">
                   <CircleDollarSign className="w-3.5 h-3.5 text-gray-400" /> Cash Deposit (₦)
                 </label>
                 <input

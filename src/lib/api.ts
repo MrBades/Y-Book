@@ -3,6 +3,8 @@
  * Allows developers to update base URLs in one place.
  */
 
+import { safeStorage } from '../utils/storage';
+
 export const SYSTEM_API_BASE_URL = '';
 
 export const API_ENDPOINTS = {
@@ -51,12 +53,12 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
   try {
     const res = await fetch(url, options);
     // Ignore 401 triggers on logins, backups, or verification status checks to prevent infinite reloads
-    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status');
+    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status') || path.includes('/register-onboarding') || path.includes('/verify-skipped-account') || path.includes('/auth/');
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
       console.warn("Unauthorized API call, clearing session and reloading:", path);
-      localStorage.removeItem('session_id');
-      localStorage.removeItem('active_screen');
+      safeStorage.removeItem('session_id');
+      safeStorage.removeItem('active_screen');
       window.location.reload();
       return res;
     }
@@ -77,12 +79,12 @@ export async function nodeFetch(path: string, options?: RequestInit): Promise<Re
   const url = getSystemApiUrl(path);
   try {
     const res = await fetch(url, options);
-    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status');
+    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status') || path.includes('/register-onboarding') || path.includes('/verify-skipped-account') || path.includes('/auth/');
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
         console.warn("Unauthorized nodeFetch call, clearing session and reloading:", path);
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('active_screen');
+        safeStorage.removeItem('session_id');
+        safeStorage.removeItem('active_screen');
         window.location.reload();
         return res;
     }
@@ -103,12 +105,12 @@ export async function systemFetch(path: string, options?: RequestInit): Promise<
   const url = getSystemApiUrl(path);
   try {
     const res = await fetch(url, options);
-    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status');
+    const isAuthPath = path.includes('/pin-login') || path.includes('/probe') || path.includes('/check-verification-status') || path.includes('/register-onboarding') || path.includes('/verify-skipped-account') || path.includes('/auth/');
     const isBackupPath = path.includes('/backup') || path.includes('/api/backup');
     if (res.status === 401 && !isAuthPath && !isBackupPath) {
         console.warn("Unauthorized systemFetch call, clearing session and reloading:", path);
-        localStorage.removeItem('session_id');
-        localStorage.removeItem('active_screen');
+        safeStorage.removeItem('session_id');
+        safeStorage.removeItem('active_screen');
         window.location.reload();
         return res;
     }

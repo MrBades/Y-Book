@@ -3,20 +3,50 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Yeedem Books</title>
+    <title>Yeedem Books - AI Ledger Bookkeeping, Smart Invoicing & Debt Tracker</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="shortcut icon" type="image/png" href="/favicon.png" />
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Yeedem Books is a high-reliability offline-first bookkeeping platform for Nigerian merchants. Log debts, dictate invoices via voice, send automated WhatsApp reminders, and print thermal kiosk receipts." />
+    <meta name="keywords" content="Yeedem, Yeedem Books, ledger app, Nigerian wholesalers, credit manager, WhatsApp debt alert, offline bookkeeping, voice-to-invoice, market invoice generator, thermal printer software, credit ledger" />
+    <meta name="author" content="Yeedem Technologies" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="English" />
+    <meta name="revisit-after" content="7 days" />
+    <link rel="canonical" href="https://yeedem.com" />
+
     <!-- OG_META_TAGS_START -->
-    <meta name="description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Yeedem Books - Fast Bookkeeping & Invoicing" />
-    <meta property="og:description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
+    <meta property="og:url" content="https://yeedem.com" />
+    <meta property="og:title" content="Yeedem Books - AI Ledger Bookkeeping, Invoicing & Debt Tracker" />
+    <meta property="og:description" content="Automated credit tracking, real-time debt bookkeeping, thermal receipt printing, and voice-to-invoice parsing for modern Nigerian merchant enterprises." />
     <meta property="og:image" content="/pwa_icon_logo.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Yeedem Books - Fast Bookkeeping & Invoicing" />
-    <meta name="twitter:description" content="Automated ledger tracking and real-time debt bookkeeping parameters for modern Nigerian merchant enterprises." />
+    <meta name="twitter:url" content="https://yeedem.com" />
+    <meta name="twitter:title" content="Yeedem Books - AI Ledger Bookkeeping, Invoicing & Debt Tracker" />
+    <meta name="twitter:description" content="Automated credit tracking, real-time debt bookkeeping, thermal receipt printing, and voice-to-invoice parsing for modern Nigerian merchant enterprises." />
     <meta name="twitter:image" content="/pwa_icon_logo.png" />
     <!-- OG_META_TAGS_END -->
+
+    <!-- JSON-LD Structured Schema Data for SEO Search Results -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Yeedem Books",
+      "operatingSystem": "All",
+      "applicationCategory": "BusinessApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "NGN"
+      },
+      "description": "High-reliability automated ledger tracking, AI voice-to-invoice bookkeeping, and WhatsApp credit debt reminders for modern Nigerian merchants.",
+      "featureList": "AI Voice-Prompt Invoice Parsing, Offline-First High Reliability, WhatsApp Debt Reminders, Thermal Receipt Printing, Multi-Operator Cashier Lock, Suspicious Session Security Guard"
+    }
+    </script>
+
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/pwa_icon_logo.png" />
     <meta name="theme-color" content="#0E1338" />
@@ -24,6 +54,51 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
+    <script>
+      // Immediately handle asset loading failures (e.g. stale PWA cache pointing to old hashes)
+      window.addEventListener('error', (e) => {
+        const target = e.target;
+        if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+          console.warn('⚡ Asset load failed. Purging PWA caches and reloading page...', target.src || target.href);
+          if ('serviceWorker' in navigator) {
+            caches.keys().then((names) => {
+              return Promise.all(names.map(name => caches.delete(name)));
+            }).then(() => {
+              navigator.serviceWorker.getRegistrations().then((registrations) => {
+                for (let registration of registrations) {
+                  registration.unregister();
+                }
+                window.location.reload();
+              });
+            }).catch(() => {
+              window.location.reload();
+            });
+          } else {
+            window.location.reload();
+          }
+        }
+      }, true);
+
+      window.addEventListener('vite:preloadError', (e) => {
+        console.warn('⚡ Vite preloadError detected. Purging PWA caches and reloading...');
+        if ('serviceWorker' in navigator) {
+          caches.keys().then((names) => {
+            return Promise.all(names.map(name => caches.delete(name)));
+          }).then(() => {
+            navigator.serviceWorker.getRegistrations().then((registrations) => {
+              for (let registration of registrations) {
+                registration.unregister();
+              }
+              window.location.reload();
+            });
+          }).catch(() => {
+            window.location.reload();
+          });
+        } else {
+          window.location.reload();
+        }
+      });
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
