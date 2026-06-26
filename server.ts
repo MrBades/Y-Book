@@ -1914,7 +1914,7 @@ app.get("/api/public/shared-invoice/:token", (req, res) => {
                         for (const cust of customersList) {
                             if (Array.isArray(cust.invoices)) {
                                 for (const inv of cust.invoices) {
-                                    const calcToken = "yb_token_" + inv.id.substring(0, 8);
+                                    const calcToken = "yb_token_" + inv.id;
                                     if (calcToken === token) {
                                         foundInvoice = inv;
                                         if (backup.businessProfile) {

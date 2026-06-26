@@ -978,7 +978,7 @@ export default function App() {
         // First try to look in local loaded customers just in case
         for (const cust of customers) {
            for (const inv of (cust.invoices || [])) {
-              const calculatedToken = "yb_token_" + inv.id.substring(0, 8);
+              const calculatedToken = "yb_token_" + inv.id;
               if (calculatedToken === token) {
                 setSelectedInvoice(inv);
                 setSharedBusiness(userState.business);

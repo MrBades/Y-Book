@@ -59,7 +59,7 @@ export default function DebtorsList({
     
     const unpaidInvoices = cust.invoices ? cust.invoices.filter(inv => inv.debtBalance > 0) : [];
     const invoiceLinks = unpaidInvoices.map(inv => {
-      const previewToken = "yb_token_" + inv.id.substring(0, 8);
+      const previewToken = "yb_token_" + inv.id;
       return `${getAppBaseUrl()}/receipts/token/${previewToken}/`;
     });
     const linkSuffix = invoiceLinks.length > 0 ? ` View invoice: ${invoiceLinks[0]}` : '';
@@ -93,7 +93,7 @@ export default function DebtorsList({
 
     const unpaidInvoices = cust.invoices ? cust.invoices.filter(inv => inv.debtBalance > 0) : [];
     const invoiceLinks = unpaidInvoices.map(inv => {
-      const previewToken = "yb_token_" + inv.id.substring(0, 8);
+      const previewToken = "yb_token_" + inv.id;
       return `${getAppBaseUrl()}/receipts/token/${previewToken}/`;
     });
     const invoiceLinksStr = invoiceLinks.length > 0 

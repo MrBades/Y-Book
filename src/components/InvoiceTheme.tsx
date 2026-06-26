@@ -179,7 +179,7 @@ export default function InvoiceTheme({
     if (activeMode === 'pay_link') {
       message = `Hello ${invoice.customerName}, here is the payment link to verify and settle your outstanding invoice #${invoice.id.substring(0, 8).toUpperCase()} of ${currencySymbol}${invoice.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}.\n\nCustom payment link: ${business.customPaymentLink}`;
     } else {
-      const previewToken = "yb_token_" + invoice.id.substring(0, 8);
+      const previewToken = "yb_token_" + invoice.id;
       const mockPublicUrl = getAppBaseUrl() + `/receipts/token/${previewToken}/`;
       message = `Hello ${invoice.customerName}, here is your bookkeeping invoice breakdown from ${businessName}. Invoice identifier: YB-2026-${invoice.id.substring(0, 4).toUpperCase()}. Balance Due: ${currencySymbol}${invoice.debtBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}. You can view the live interactive receipt and ledger online at: ${mockPublicUrl} Expect delivery details soon!`;
     }
@@ -238,7 +238,7 @@ export default function InvoiceTheme({
       });
     }
 
-    const previewToken = "yb_token_" + invoice.id.substring(0, 8);
+    const previewToken = "yb_token_" + invoice.id;
     const mockPublicUrl = getAppBaseUrl() + `/receipts/token/${previewToken}/`;
     
     navigator.clipboard.writeText(mockPublicUrl).then(() => {
