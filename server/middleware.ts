@@ -1,6 +1,6 @@
 
 import { Request, Response, NextFunction } from 'express';
-import { readDB, writeDB } from './db.js';
+import { readDB, writeDB, initAndSyncDatabase } from './db.js';
 
 export const getApproxRegion = (req: Request): string => {
     const headerRegion = req.headers['x-approx-region'] as string;
@@ -60,8 +60,23 @@ export const requireSession = async (req: Request, res: Response, next: NextFunc
     try {
         const session_id = req.headers['x-session-id'] as string;
         if (!session_id) return res.status(401).json({ error: "Session required" });
-        const db = readDB();
+        let db = readDB();
         let session = (db.merchantSessions || []).find((s: any) => s.session_id === session_id);
+        
+        if (!session) {
+            console.log(`[SESSION SYNCHRONIZATION] Session ${session_id} not found locally in active_db cache. Attempting real-time remote cloud sync...`);
+            try {
+                // Await a forced pull to retrieve session records created in concurrent serverless contexts
+                await initAndSyncDatabase(true);
+                db = readDB();
+                session = (db.merchantSessions || []).find((s: any) => s.session_id === session_id);
+                if (session) {
+                    console.log(`[SESSION SYNCHRONIZATION] Session ${session_id} successfully synchronized and recovered from cloud database!`);
+                }
+            } catch (syncErr: any) {
+                console.error("[SESSION SYNCHRONIZATION] Real-time session synchronization failed:", syncErr.message || syncErr);
+            }
+        }
         
         if (!session) {
             // Check if we can validate the session with Django REST API dynamically

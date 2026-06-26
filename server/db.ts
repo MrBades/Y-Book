@@ -46,9 +46,11 @@ export const getPool = () => {
                 ssl: {
                     rejectUnauthorized: false
                 },
-                connectionTimeoutMillis: 10000, 
-                idleTimeoutMillis: 20000,
-                max: 10
+                connectionTimeoutMillis: 3000, // Fail-fast in 3 seconds to prevent hitting Vercel function timeout limits
+                idleTimeoutMillis: 1000,       // Clean up idle connections instantly inside transient serverless lambda containers
+                max: 2,                        // Max 2 connections per lambda container to completely prevent connection exhaustion
+                keepAlive: true,
+                keepAliveInitialDelayMillis: 10000
             });
             
             // Handle unexpected errors on idle clients to prevent unhandled exception crash
@@ -119,18 +121,18 @@ let lastSyncAttemptTime = 0;
 const SYNC_RETRY_COOLDOWN = 10000; // 10 seconds cooldown between synchronization retries
 
 // Cloud Database Initialization and Synchronization Loader
-export const initAndSyncDatabase = async () => {
-    if (isDbSynced) return;
+export const initAndSyncDatabase = async (force: boolean = false) => {
+    if (isDbSynced && !force) return;
 
     const now = Date.now();
     // If a sync attempt recently failed, enforce a small cooldown before attempting to sync from the cloud database again, 
     // allowing the system to use local cached state gracefully without blocking the current client request with socket timeouts.
-    if (now - lastSyncAttemptTime < SYNC_RETRY_COOLDOWN) {
+    if (!force && now - lastSyncAttemptTime < SYNC_RETRY_COOLDOWN) {
         console.warn("[DB SYNC] Postponing cloud PostgreSQL synchronization: in retry cooldown. Falling back to local ledger cache.");
         return;
     }
 
-    if (isSyncing && syncPromise) {
+    if (!force && isSyncing && syncPromise) {
         return syncPromise;
     }
 
