@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Product } from '../types';
 import { apiFetch } from '../lib/api';
+import { parseOfflineInput } from '../utils/parser';
 
 interface SmartProductWidgetProps {
   isService?: boolean;
@@ -105,6 +106,11 @@ export default function SmartProductWidget({
     if (!text.trim()) {
       alert("Please enter a text description of the product first.");
       return;
+    }
+
+    if (!isOnline) {
+        setExtractedProduct(parseOfflineInput(text));
+        return;
     }
 
     setIsLoading(true);

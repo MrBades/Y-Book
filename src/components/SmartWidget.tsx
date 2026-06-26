@@ -81,344 +81,66 @@ export default function SmartWidget({
   const handleLocalParse = () => {
     setIsLoading(true);
     
-    const parseAmountLocal = (valStr: string, multStr: string | undefined): number => {
-      if (!valStr) return 0.0;
+    const parseAmountLocal = (valStr: string): number => {
       const val = parseFloat(valStr.replace(/,/g, ''));
-      if (isNaN(val)) return 0.0;
-      if (multStr) {
-        const m = multStr.toLowerCase();
-        if (['k', 'kilo', 'thousand'].includes(m)) return val * 1000;
-        if (['m', 'million'].includes(m)) return val * 1000000;
-      }
-      return val;
+      return isNaN(val) ? 0.0 : val;
     };
 
-    let rawText = text.trim();
     let extractedCustomer = 'Walk-in Customer';
-
-    // 1. Transaction Type
-    let transactionType: 'sale' | 'expense' | 'payment_on_account' = 'sale';
-    if (/\b(expense|spent|bought|purchase|cost|paid for|payment for)\b/i.test(rawText)) {
-      transactionType = 'expense';
-    } else if (/\b(payment on account|deposit on account)\b/i.test(rawText)) {
-      transactionType = 'payment_on_account';
-    }
-
-    // Pre-extract customer from the entire block using multi-stage patterns to handle colons & punctuation gracefully
-    const customerPatterns = [
-      /(?:sold\s+to|bought\s+from|received\s+from|customer|buyer|client|seller|to|for|from|sold\s+to|for\s+customer)\s*:\s*([a-zA-Z\s]+?)(?:\s*(?:for|at|each|@|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i,
-      /(?:sold\s+to|bought\s+from|received\s+from|customer|buyer|client|seller|to|for|from|sold\s+to|for\s+customer)\s+([a-zA-Z\s]+?)(?:\s*[:;,-]|\s+(?:for|at|each|@|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i
-    ];
-
-    for (const pattern of customerPatterns) {
-      const match = rawText.match(pattern);
-      if (match) {
-        const nameCandidate = match[1].trim();
-        if (nameCandidate && nameCandidate.length > 2 && !/^(bags|units|pieces|kg|items|cash|the|each|and|spent|bought|sold|at|for|to)$/i.test(nameCandidate)) {
-          extractedCustomer = nameCandidate;
-          // Strip the customer phrase from rawText so it doesn't pollute the item name or break price anchors!
-          const fullMatchStr = match[0];
-          const nameIndex = fullMatchStr.toLowerCase().indexOf(nameCandidate.toLowerCase());
-          if (nameIndex !== -1) {
-            const stringToRemove = fullMatchStr.substring(0, nameIndex + nameCandidate.length);
-            const escapedRemove = stringToRemove.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-            rawText = rawText.replace(new RegExp(escapedRemove, 'i'), ' ').trim();
-          }
-          break;
-        }
-      }
-    }
-
-    // Try a fallback search for "<Name> paid/deposited <Amount>" to extract customer
-    if (extractedCustomer === 'Walk-in Customer') {
-      const namePaidMatch = rawText.match(/([a-zA-Z\s]+?)\s+(?:paid|pay|deposit|deposited|payment|cash|received|got)\s+(?:N|₦)?\s*[\d,]+/i);
-      if (namePaidMatch) {
-        const candidate = namePaidMatch[1].trim();
-        if (candidate && candidate.length > 2 && !/^(and|he|she|they|each|total|price|is|the|we|i|you)$/i.test(candidate)) {
-          extractedCustomer = candidate;
-          rawText = rawText.replace(namePaidMatch[1], '').trim();
-        }
-      }
-    }
-
-    // Standardize transaction text by splitting common continuous voice indicators into separate lines
-    let processedText = rawText;
-    if (!processedText.includes('\n')) {
-      processedText = processedText
-        .replace(/\s+and\s+(?:he|she|they)?\s*(paid|deposit|deposited)\s+/gi, '\n$1 ')
-        .replace(/\s+(paid|deposit|deposited|payment|received|got)\s+/gi, '\n$1 ')
-        .replace(/\s+and\s+/gi, '\n')
-        .replace(/[,;.]\s*/g, '\n');
-    }
-
-    // Modern Line-by-Line Multi-Entry Parser
-    const lines = processedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const parsedItems: InvoiceItem[] = [];
     let amountPaidSum = 0.0;
+    const parsedItems: InvoiceItem[] = [];
 
-    // Direct single-line regex support for explicit expense/payment statements to prevent 0-value extraction
-    const expenseMatch1 = rawText.match(/(?:spent|paid|cost|payment for)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*(?:on|for)\s+([a-zA-Z0-9\s_\-]+)/i);
-    const expenseMatch2 = rawText.match(/(?:bought|purchased)\s+([a-zA-Z0-9\s_\-]+?)\s+(?:for|at|@)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i);
+    // Normalize text into structured lines before parsing
+    const normalizedText = text
+      .replace(/Customer:\s*([^,\n]+)(?:,)/gi, 'Customer: $1\n')
+      .replace(/paid\s+([\d,]+)/gi, 'Paid: $1\n')
+      .replace(/,\s*/g, '\n');
 
-    const paymentOnAccountMatch1 = rawText.match(/(?:received|got|collected)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*from\s+([a-zA-Z\s]+)/i);
-    const paymentOnAccountMatch2 = rawText.match(/([a-zA-Z\s]+?)\s+(?:paid|deposited|pay)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i);
-
-    if (expenseMatch1) {
-      const amt = parseAmountLocal(expenseMatch1[1], expenseMatch1[2]);
-      const itemName = expenseMatch1[3].trim();
-      parsedItems.push({
-        name: itemName,
-        quantity: 1,
-        price: amt,
-        total: amt
-      });
-      transactionType = 'expense';
-    } else if (expenseMatch2) {
-      const itemName = expenseMatch2[1].trim();
-      const amt = parseAmountLocal(expenseMatch2[2], expenseMatch2[3]);
-      parsedItems.push({
-        name: itemName,
-        quantity: 1,
-        price: amt,
-        total: amt
-      });
-      transactionType = 'expense';
-    } else if (paymentOnAccountMatch1) {
-      const amt = parseAmountLocal(paymentOnAccountMatch1[1], paymentOnAccountMatch1[2]);
-      const custName = paymentOnAccountMatch1[3].trim();
-      if (!/^(bags|units|pieces|kg|items|cash|the)$/i.test(custName)) {
-        extractedCustomer = custName;
-        amountPaidSum = amt;
-        transactionType = 'payment_on_account';
-        parsedItems.push({
-          name: 'Payment on Account',
-          quantity: 1,
-          price: amt,
-          total: amt
-        });
-      }
-    } else if (paymentOnAccountMatch2) {
-      const custName = paymentOnAccountMatch2[1].trim();
-      const amt = parseAmountLocal(paymentOnAccountMatch2[2], paymentOnAccountMatch2[3]);
-      if (!/^(and|he|she|they|each|total|price|is|the|we|i|you|spent|bought)$/i.test(custName)) {
-        extractedCustomer = custName;
-        amountPaidSum = amt;
-        transactionType = 'payment_on_account';
-        parsedItems.push({
-          name: 'Payment on Account',
-          quantity: 1,
-          price: amt,
-          total: amt
-        });
-      }
-    } else {
-      // Check customer names and items line-by-line
-      for (const line of lines) {
-        const custFormMatch = line.match(/^(?:customer|buyer|client|seller|to|for|from|sold to|for customer)\s*:\s*([a-zA-Z\s]+)/i) ||
-                              line.match(/^(?:sold\s+to|bought\s+from|received\s+from)\s+([a-zA-Z\s]+)$/i);
-        if (custFormMatch) {
-          const nameCandidate = custFormMatch[1].trim();
-          if (nameCandidate && !/^(bags|units|pieces|kg|items|cash|the|each)$/i.test(nameCandidate)) {
-            extractedCustomer = nameCandidate;
-            continue;
-          }
-        }
-
-        // Check payments in lines
-        const paymentMatch = line.match(/^(?:paid|pay|deposit|deposited|payment|cash|received|got|amt paid|amount paid)\s*(?:of|cash)?\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?/i) ||
-                             line.match(/^(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?\s*(?:paid|pay|deposited?|payment|cash|received|got)/i);
-        if (paymentMatch) {
-          amountPaidSum += parseAmountLocal(paymentMatch[1], paymentMatch[2]);
-          continue;
-        }
-
-        // Check item / commodity in lines
-        // Matches "5 bags of rice at 75000", "2 bags of rice at 75000" etc., with optional "at/for" like "5 bags of rice 75000"
-        const itemRegex = /^\s*(?:sold|bought|sale of|purchase of)?\s*(?:(\d+)\s*(?:bags|units|pieces|pcs|kg|cartons|items|shirts|pairs|bottles|carton|bag|pair|bottle|packet|packets|pc|box|boxes)?\s*(?:of)?\s+)?([a-zA-Z0-9\s_\-]+?)(?:\s+(?:at|for|each|@|₦|N|N\s*|₦\s*|\s+)\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million)?(?:\s*each|each|unit|per unit)?)?$/i;
-        const itemMatch = line.match(itemRegex);
+    const lines = normalizedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    
+    for (const line of lines) {
+      if (line.toLowerCase().startsWith('customer:')) {
+        extractedCustomer = line.replace(/customer:/i, '').trim();
+      } else if (line.toLowerCase().includes('paid')) {
+        const amtMatch = line.match(/[\d,]+/);
+        if (amtMatch) amountPaidSum = parseAmountLocal(amtMatch[0]);
+      } else {
+        // Improved regex to handle goods and services: "15 bags of cement at 8500", "5 hours Web Design at 15000"
+        const itemMatch = line.match(/(\d+)\s*(?:bags?|packs?|sacks?|units?|pcs?|pieces?|hours?|sessions?)?\s*(?:of)?\s*(.*?)(?:\s+(?:at|@|for)?\s*([\d,]+))?$/i);
+        
         if (itemMatch) {
-          const qtyStr = itemMatch[1];
-          let prodNameStr = itemMatch[2].trim();
-          const priceStr = itemMatch[3];
-          const multStr = itemMatch[4];
-
-          const lineQty = qtyStr ? parseInt(qtyStr, 10) : 1;
+          const qty = parseInt(itemMatch[1], 10);
+          const name = itemMatch[2].trim();
+          const price = itemMatch[3] ? parseAmountLocal(itemMatch[3]) : 0;
           
-          if (prodNameStr) {
-            prodNameStr = prodNameStr.replace(/\b(bags|units|pieces|cartons|of|kg|items|pcs)\b/gi, '').trim();
-            // Clean up customer name if still present in product name
-            if (extractedCustomer && extractedCustomer !== 'Walk-in Customer') {
-              const escCustomer = extractedCustomer.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-              const cleanupRegex = new RegExp(`\\s+(?:to|for|from|sold to)\\s+${escCustomer}\\b`, 'i');
-              prodNameStr = prodNameStr.replace(cleanupRegex, '').trim();
-            }
-          }
-
-          // Avoid false positives on action tokens
-          if (prodNameStr && !/^(paid|deposit|deposited|payment|cash|received|got|to|for|from|customer|buyer|client|seller|at|each)$/i.test(prodNameStr)) {
-            let lineUnitPrice = 0.0;
-            if (priceStr) {
-              lineUnitPrice = parseAmountLocal(priceStr, multStr);
-            }
-            const lineTotal = lineQty * lineUnitPrice;
-            
+          if (name.length > 0) {
             parsedItems.push({
-              name: prodNameStr,
-              quantity: lineQty,
-              price: lineUnitPrice,
-              total: lineTotal
+              name: name,
+              quantity: qty,
+              price: price,
+              total: qty * price
             });
           }
         }
       }
     }
 
-    if (parsedItems.length > 0) {
-      if (extractedCustomer === 'Walk-in Customer') {
-        const customerMatch = rawText.match(/(?:to|for|from|buyer|customer|seller)\s+([a-zA-Z\s]+?)(?:\s*[:;,-]|\s+(?:for|at|each|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i);
-        if (customerMatch) {
-          const name = customerMatch[1].trim();
-          if (name && !/^(bags|units|pieces|kg|items|cash|the)$/i.test(name)) {
-            extractedCustomer = name;
-          }
-        }
-      }
-
-      const totalAmountVal = parsedItems.reduce((acc, itm) => acc + (itm.total || 0), 0);
-      const unifiedProdName = parsedItems.map(itm => itm.name).join(', ') || 'General Commodity';
-
-      setTimeout(() => {
-        setOutcome({
-          status: 'fallback_error',
-          parsed_data: {
-            product_name: unifiedProdName,
-            customer_name: extractedCustomer,
-            items: parsedItems,
-            total_amount: totalAmountVal,
-            amount_paid: amountPaidSum,
-            debt_balance: Math.max(0, totalAmountVal - amountPaidSum),
-            transaction_type: transactionType
-          },
-          fallback_message: `Local line parser extracted ${parsedItems.length} items. Total: ₦${totalAmountVal.toLocaleString(undefined, {minimumFractionDigits: 2})}, Paid: ₦${amountPaidSum.toLocaleString(undefined, {minimumFractionDigits: 2})}`
-        });
-        setIsLoading(false);
-      }, 500);
-      return;
-    }
-
-    // 2. Extract customer name
-    let customer = 'Walk-in Customer';
-    const customerMatch = rawText.match(/(?:to|for|from|buyer|customer|seller)\s+([a-zA-Z\s]+?)(?:\s+(?:for|at|each|deposit|deposited|pay|paid|with|got|received|he|she|on|₦|N|\d+|,|;|\.|\blet\b|$))/i);
-    if (customerMatch) {
-      const name = customerMatch[1].trim();
-      if (name && !/^(bags|units|pieces|kg|items|cash|the)$/i.test(name)) {
-        customer = name;
-      }
-    }
-
-    // 3. Extract amount paid / deposit
-    let amountPaid = 0.0;
-    const paidMatch = rawText.match(/(?:deposit(?:ed|s|ing)?|paid|pay(?:ing|s)?|got|received?|payment\s*(?:of)?)\s*(?:cash\s+)?(?:of|cash)?\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?/i) || 
-                      rawText.match(/(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?\s*(?:cash\s+)?(?:deposit|deposited|paid|payment|received|got)/i);
-    if (paidMatch) {
-      amountPaid = parseAmountLocal(paidMatch[1], paidMatch[2]);
-    }
-
-    // 4. Extract quantity, item name
-    let qty = 1;
-    let prodName = 'General Commodity';
-
-    const qtyItemRegex = /\b(\d+)\s*(?:bags|units|pieces|pcs|kg|cartons|items|shirts|pairs|bottles)?\s*(?:of)?\s+([a-zA-Z\s]+?)(?:\s+(?:to|for|at|each|with|and|he|she|deposited|paid|deposit|₦|N|\d+|,|;|\.|$))/i;
-    const qtyItemMatch = rawText.match(qtyItemRegex);
-    if (qtyItemMatch) {
-      qty = parseInt(qtyItemMatch[1], 10);
-      prodName = qtyItemMatch[2].trim();
-    } else {
-      const itemExtract = rawText.match(/(?:sold|bought|sale of|purchase of)\s+([a-zA-Z\s]+?)(?:\s+(?:to|for|at|each|with|and|he|she|deposited|paid|deposit|₦|N|\d+|,|;|\.|$))/i);
-      if (itemExtract) {
-        prodName = itemExtract[1].trim();
-      }
-    }
-
-    if (!prodName || prodName === 'General Commodity') {
-      const startingWordMatch = rawText.match(/^([a-zA-Z]{2,15})(?:\s+(?:₦|N|\d+|for|to|at|each|with|and|he|she|deposited|paid|deposit))/i);
-      if (startingWordMatch && !/^(create|record|add|new|sold|bought|sale|expense)$/i.test(startingWordMatch[1])) {
-        prodName = startingWordMatch[1].trim();
-      }
-    }
-
-    if (prodName) {
-      prodName = prodName.replace(/\b(bags|units|pieces|cartons|of|kg|items|pcs)\b/gi, '').trim();
-    }
-
-    // 5. Extract unit price or total price
-    const eachMatch = rawText.match(/(?:for|at|@)?\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?\s*each/i) || 
-                      rawText.match(/(?:at|@)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?/i);
-
-    let pricePerUnit = 0.0;
-    let isUnitPriceFound = false;
-
-    if (eachMatch) {
-      pricePerUnit = parseAmountLocal(eachMatch[1], eachMatch[2]);
-      isUnitPriceFound = true;
-    }
-
-    let totalAmount = 0.0;
-    if (isUnitPriceFound) {
-      totalAmount = qty * pricePerUnit;
-    } else {
-      const lumpSumMatch = rawText.match(/(?:for|amounting\s+to|totalling|worth|total\s*(?:of)?)\s*(?:N|₦)?\s*([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?/i);
-      if (lumpSumMatch) {
-        totalAmount = parseAmountLocal(lumpSumMatch[1], lumpSumMatch[2]);
-        pricePerUnit = totalAmount / qty;
-      } else {
-        const numbersMatch = [...rawText.matchAll(/\b([\d,]+(?:\.\d+)?)\s*(k|kilo|thousand|m|million|b|billion)?\b/gi)];
-        const candidatePrices: number[] = [];
-        numbersMatch.forEach(m => {
-          const val = parseAmountLocal(m[1], m[2]);
-          if (val !== qty && val !== amountPaid) {
-            candidatePrices.push(val);
-          }
-        });
-
-        if (candidatePrices.length > 0) {
-          const candidate = candidatePrices[0];
-          if (qty > 1 && candidate < 50000) {
-            pricePerUnit = candidate;
-            totalAmount = qty * pricePerUnit;
-          } else {
-            totalAmount = candidate;
-            pricePerUnit = totalAmount / qty;
-          }
-        }
-      }
-    }
-
-    if (totalAmount === 0 && pricePerUnit > 0) {
-      totalAmount = qty * pricePerUnit;
-    }
-    if (pricePerUnit === 0 && totalAmount > 0) {
-      pricePerUnit = totalAmount / qty;
-    }
+    const totalAmountVal = parsedItems.reduce((acc, itm) => acc + (itm.total || 0), 0);
+    const unifiedProdName = parsedItems.map(itm => itm.name).join(', ') || 'General Commodity';
 
     setTimeout(() => {
       setOutcome({
         status: 'fallback_error',
         parsed_data: {
-          product_name: prodName || 'General Commodity',
-          customer_name: customer,
-          items: [{ 
-            name: prodName || 'General Commodity', 
-            quantity: qty, 
-            price: pricePerUnit, 
-            total: totalAmount 
-          }],
-          total_amount: totalAmount,
-          amount_paid: amountPaid,
-          debt_balance: Math.max(0, totalAmount - amountPaid),
-          transaction_type: transactionType
+          product_name: unifiedProdName,
+          customer_name: extractedCustomer,
+          items: parsedItems,
+          total_amount: totalAmountVal,
+          amount_paid: amountPaidSum,
+          debt_balance: Math.max(0, totalAmountVal - amountPaidSum),
+          transaction_type: 'sale'
         },
-        fallback_message: `Detected Parsing: Total ${totalAmount}, Paid ${amountPaid}, Customer ${customer}, Item ${prodName || 'N/A'}`
+        fallback_message: `Local line parser extracted ${parsedItems.length} items. Total: ₦${totalAmountVal.toLocaleString(undefined, {minimumFractionDigits: 2})}, Paid: ₦${amountPaidSum.toLocaleString(undefined, {minimumFractionDigits: 2})}`
       });
       setIsLoading(false);
     }, 500);
@@ -1030,14 +752,17 @@ export default function SmartWidget({
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder={
-                      isService 
-                        ? "Describe the service transaction...\ne.g. 'To Alao: 5 hours of Web Design at 15000 each, deposit paid 50000'\nOr '3 sessions of consulting for John at 25000 each'"
-                        : "Describe the trade or invoice details here...\ne.g. 'Sold to Baba: 15 bags of cement at 8500 each, paid 100k'\nOr '6 sacks of flour to Alao for 32000 each, paid 120000 Naira'\nOr list line by line:\n'customer: Ada\n2 bags of rice at 75000\n3 bags of flour at 32000\npaid 150000'"
+                      activeTab === 'parser_or_offline'
+                        ? "Customer: customer name,\nQnt, name price\nAmount paid"
+                        : (isService 
+                          ? "Describe the service transaction...\ne.g. 'To Alao: 5 hours of Web Design at 15000 each, deposit paid 50000'\nOr '3 sessions of consulting for John at 25000 each'"
+                          : "Describe the trade or invoice details here...")
                     }
                     rows={6}
-                    className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-sm font-sans placeholder:text-gray-400 text-gray-800 resize-none pb-20 pr-2 scrollbar-thin leading-relaxed"
+                    className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-sm font-sans placeholder:text-gray-400 text-gray-800 resize-none pb-2 pr-2 scrollbar-thin leading-relaxed"
                     id="unified-multimodal-input"
                   />
+
 
                   {/* Asset Upload & Voice Queue Elements nested in the input card itself */}
                   {(imageQueue.length > 0 || recordedVoiceBlob) && (
@@ -1127,63 +852,49 @@ export default function SmartWidget({
                 </div>
 
                 {/* Direct Transaction Format Templates Quick-Inject system */}
-                <div className="bg-[#F4F9FF] rounded-[18px] p-3.5 border border-[#00A6FF]/10 space-y-2 mt-2 leading-tight">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#0E1338] flex items-center gap-1">
-                      <FileText className="w-3.5 h-3.5 text-[#00A6FF]" /> Suggested Format Templates:
-                    </span>
-                    <span className="text-[9px] text-gray-400 font-medium">Click to insert standard layout</span>
+                {activeTab === 'parser_or_offline' && (
+                  <div className="bg-[#F4F9FF] rounded-[18px] p-3.5 border border-[#00A6FF]/10 space-y-2 mt-2 leading-tight">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-[#0E1338] flex items-center gap-1">
+                        <FileText className="w-3.5 h-3.5 text-[#00A6FF]" /> Suggested Format Templates:
+                      </span>
+                      <span className="text-[9px] text-gray-400 font-medium">Click to insert standard layout</span>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {isService ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setText("Customer: Alao, 5 hours Web Design at 15000, paid 50000")}
+                            className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
+                          >
+                            <span className="text-blue-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💻 Time/Hourly Service Format</span>
+                            "Customer: Alao, 5 hours Web Design at 15000, paid 50000"
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setText("Customer: John Obi, 3 sessions consulting at 25000, paid 0")}
+                            className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
+                          >
+                            <span className="text-amber-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💼 Flat Session Service Format</span>
+                            "Customer: John Obi, 3 sessions consulting at 25000, paid 0"
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setText("customer: John Obi\n5 bags of corn at 25,000\n2 packs of sugar at 15,000\npaid 100,000")}
+                            className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
+                          >
+                            <span className="text-purple-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">📋 Multi-Item Line-by-Line list</span>
+                            {"customer: John Obi\n5 bags of corn at 25,000\n2 packs of sugar at 15,000\npaid 100,000"}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    {isService ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setText("to Alao: 5 hours of Web Design at 15000 each, deposit paid 50000")}
-                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
-                        >
-                          <span className="text-blue-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💻 Time/Hourly Service Format</span>
-                          "to Alao: 5 hours of Web Design at 15000 each, deposit paid 50000"
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setText("3 sessions of consulting for John Obi at 25000 each")}
-                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-blue-400 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed"
-                        >
-                          <span className="text-amber-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">💼 Flat Session Service Format</span>
-                          "3 sessions of consulting for John Obi at 25000 each"
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setText("sold to Baba: 15 bags of cement at 8500 each, paid 100000")}
-                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
-                        >
-                          <span className="text-blue-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">📦 Standard Single Item Invoice</span>
-                          "sold to Baba: 15 bags of cement at 8500 each, paid 100000"
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setText("6 sacks of flour to Alao for 32000 each, paid 120000")}
-                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
-                        >
-                          <span className="text-emerald-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">🌾 Bulk Price Invoice</span>
-                          "6 sacks of flour to Alao for 32000 each, paid 120000"
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setText("customer: John Obi\n5 bags of corn at 25000\n2 packs of sugar at 15000\npaid 100000")}
-                          className="px-3 py-2 text-left text-[11px] bg-white hover:bg-blue-100/10 hover:border-[#00A6FF]/40 text-gray-700 rounded-xl border border-gray-200 transition-all font-mono leading-relaxed shadow-sm hover:shadow"
-                        >
-                          <span className="text-purple-600 font-bold block text-[9px] uppercase tracking-wider mb-0.5">📋 Multi-Item Line-by-Line list</span>
-                          {"customer: John Obi\n5 bags of corn at 25000\n2 packs of sugar at 15000\npaid 100000"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                )}
 
                 {/* THE DEDICATED FULL-WIDTH GENERATE ACTION BUTTON */}
                 <button

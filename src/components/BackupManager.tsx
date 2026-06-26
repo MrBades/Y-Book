@@ -15,6 +15,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { useDialog } from './DialogProvider';
 
 interface BackupEntry {
   filename: string;
@@ -57,6 +58,7 @@ export default function BackupManager({
   const [syncTime, setSyncTime] = useState('18:00');
   const [syncMode, setSyncMode] = useState<'manual' | 'automatic'>('manual');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showDialog } = useDialog();
 
   // Load user settings
   useEffect(() => {
@@ -213,57 +215,60 @@ export default function BackupManager({
   };
 
   const handleRestore = async (backup: BackupEntry) => {
-    const isConfirmed = window.confirm(
-      '☢️ CRITICAL OPERATION: Restore Ledger Data\n\nAre you sure you want to restore the ledger to this state? This will completely overwrite your current list of customers, product catalog, and transaction records. This action cannot be undone!'
-    );
-    if (!isConfirmed) return;
+    showDialog({
+        title: 'Restore Ledger Data',
+        message: '☢️ CRITICAL OPERATION: Restore Ledger Data\n\nAre you sure you want to restore the ledger to this state? This will completely overwrite your current list of customers, product catalog, and transaction records. This action cannot be undone!',
+        onConfirm: async () => {
+            setIsLoading(true);
+            setActionStatus({ type: 'info', message: 'Retrieving backup payload...' });
+            
+            try {
+              let payload: any = null;
+              if (backup.source === 'server') {
+                const token = localStorage.getItem('session_id') || '';
+                const response = await apiFetch(`/api/backup/download/${backup.filename}`, {
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'x-session-id': token
+                  }
+                });
+                if (!response.ok) throw new Error('Failed to retrieve backup file from server disk');
+                payload = await response.json();
+              } else {
+                const localKey = `yeedem_local_backups_${userEmail}`;
+                const stored = localStorage.getItem(localKey);
+                if (!stored) throw new Error('Browser backup inventory damaged.');
+                const parsed = JSON.parse(stored);
+                const entry = parsed.find((item: any) => item.id === backup.localId || item.filename === backup.filename);
+                if (!entry) throw new Error('Requested browser local snapshot was not found.');
+                payload = entry.data;
+              }
 
-    setIsLoading(true);
-    setActionStatus({ type: 'info', message: 'Retrieving backup payload...' });
-    
-    try {
-      let payload: any = null;
-      if (backup.source === 'server') {
-        const token = localStorage.getItem('session_id') || '';
-        const response = await apiFetch(`/api/backup/download/${backup.filename}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'x-session-id': token
-          }
-        });
-        if (!response.ok) throw new Error('Failed to retrieve backup file from server disk');
-        payload = await response.json();
-      } else {
-        const localKey = `yeedem_local_backups_${userEmail}`;
-        const stored = localStorage.getItem(localKey);
-        if (!stored) throw new Error('Browser backup inventory damaged.');
-        const parsed = JSON.parse(stored);
-        const entry = parsed.find((item: any) => item.id === backup.localId || item.filename === backup.filename);
-        if (!entry) throw new Error('Requested browser local snapshot was not found.');
-        payload = entry.data;
-      }
+              if (!payload || !payload.data) {
+                throw new Error('Invalid JSON backup file schema.');
+              }
 
-      if (!payload || !payload.data) {
-        throw new Error('Invalid JSON backup file schema.');
-      }
+              const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
+              onRestoreBackup({
+                customers: restCust || [],
+                products: restProd || [],
+                restockLogs: restLogs || []
+              });
 
-      const { customers: restCust, products: restProd, restockLogs: restLogs } = payload.data;
-      onRestoreBackup({
-        customers: restCust || [],
-        products: restProd || [],
-        restockLogs: restLogs || []
-      });
-
-      setActionStatus({ 
-        type: 'success', 
-        message: '🎉 Ledger records successfully restored! Your workspace has been updated with the backup file data.' 
-      });
-      refreshTimeline();
-    } catch (err: any) {
-      setActionStatus({ type: 'error', message: `Restore failed: ${err.message || 'Malformed schema.'}` });
-    } finally {
-      setIsLoading(false);
-    }
+              setActionStatus({ 
+                type: 'success', 
+                message: '🎉 Ledger records successfully restored! Your workspace has been updated with the backup file data.' 
+              });
+              // @ts-ignore - Assuming refreshTimeline exists in the component scope
+              if (typeof refreshTimeline === 'function') refreshTimeline();
+            } catch (err: any) {
+              setActionStatus({ type: 'error', message: `Restore failed: ${err.message || 'Malformed schema.'}` });
+            } finally {
+              setIsLoading(false);
+            }
+        },
+        confirmLabel: 'Restore'
+    });
   };
 
   const handleDelete = async (backup: BackupEntry) => {

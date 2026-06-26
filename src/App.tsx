@@ -70,6 +70,7 @@ import {
 } from 'lucide-react';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
+import { DialogProvider } from './components/DialogProvider';
 import LowStockAlert from './components/LowStockAlert';
 import { safeStorage } from './utils/storage';
 
