@@ -1,9 +1,7 @@
 
 import { join } from 'path';
 import fs from 'fs';
-import pg from 'pg';
-
-const { Pool } = pg;
+import { Pool } from '@neondatabase/serverless';
 
 const isVercel = !!process.env.VERCEL;
 
@@ -23,45 +21,19 @@ export const getPool = () => {
 
     if (process.env.DATABASE_URL) {
         try {
-            let dbUrl = process.env.DATABASE_URL.trim();
-            if (dbUrl) {
-                if (dbUrl.includes('sslmode=')) {
-                    // Explicitly use sslmode=require to avoid insecure fallback warning while allowing rejectUnauthorized: false to work correctly
-                    dbUrl = dbUrl.replace(/sslmode=[^&]+/g, 'sslmode=require');
-                } else {
-                    if (dbUrl.includes('?')) {
-                        dbUrl += '&sslmode=require';
-                    } else {
-                        dbUrl += '?sslmode=require';
-                    }
-                }
-                // Add uselibpqcompat=true to eliminate security warnings about upcoming pg SSL behavior changes
-                if (!dbUrl.includes('uselibpqcompat=')) {
-                    dbUrl += '&uselibpqcompat=true';
-                }
-            }
-
             pool = new Pool({
-                connectionString: dbUrl,
-                ssl: {
-                    rejectUnauthorized: false
-                },
-                connectionTimeoutMillis: 3000, // Fail-fast in 3 seconds to prevent hitting Vercel function timeout limits
-                idleTimeoutMillis: 1000,       // Clean up idle connections instantly inside transient serverless lambda containers
-                max: 2,                        // Max 2 connections per lambda container to completely prevent connection exhaustion
-                keepAlive: true,
-                keepAliveInitialDelayMillis: 10000
+                connectionString: process.env.DATABASE_URL
             });
             
             // Handle unexpected errors on idle clients to prevent unhandled exception crash
             pool.on('error', (err: any) => {
-                console.error('[DATABASE_POOL_ERROR] Unexpected error on idle pg client / pool:', err);
+                console.error('[DATABASE_POOL_ERROR] Unexpected error on idle Neon client / pool:', err);
                 pool = null; // Mark pool for dynamic recreation on subsequent query
             });
 
-            console.log("Database initialized: Cloud PostgreSQL Connection Pool configured successfully with serverless-optimized settings.");
+            console.log("Database initialized: Neon PostgreSQL Serverless Connection Pool configured.");
         } catch (poolErr) {
-            console.error("Failed to initialize remote cloud PostgreSQL connection pool:", poolErr);
+            console.error("Failed to initialize Neon PostgreSQL connection pool:", poolErr);
             pool = null;
         }
     }
