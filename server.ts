@@ -2195,6 +2195,9 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             <button onclick="setTab('pricing')" id="tab-pricing" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
                 <i data-lucide="coins" class="w-3.5 h-3.5"></i> SaaS Pricing Plans
             </button>
+            <button onclick="setTab('contacts')" id="tab-contacts" class="px-4 sm:px-5 py-3 text-xs font-extrabold border-b-2 border-transparent text-gray-400 hover:text-white transition-all flex items-center gap-2 inline-flex">
+                <i data-lucide="mail" class="w-3.5 h-3.5"></i> Contact Submissions
+            </button>
         </div>
 
         <!-- Tab Content Viewport -->
@@ -2385,6 +2388,38 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact Messages Tab -->
+            <div id="view-contacts" class="space-y-4 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#111329]/50 p-4 rounded-xl border border-blue-500/10">
+                    <h2 class="text-sm font-black text-white flex items-center gap-2">
+                        <i data-lucide="mail" class="w-4 h-4 text-[#00A6FF] shrink-0"></i>
+                        <span>Contact Messages & Form Submissions</span>
+                    </h2>
+                    <span id="contacts-count-badge" class="self-start sm:self-auto px-2.5 py-1 bg-blue-950 text-[#00A6FF] rounded-full text-[10px] font-bold border border-blue-900/30 whitespace-nowrap">0 NEW</span>
+                </div>
+
+                <div class="bg-[#111329] border border-blue-500/10 rounded-2xl overflow-hidden shadow-xl">
+                    <div class="overflow-x-auto mini-scrollbar">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-[#0b0c15] text-gray-400 text-[10px] font-extrabold uppercase tracking-wider border-b border-blue-500/10 whitespace-nowrap">
+                                    <th class="py-4 px-5">Sender</th>
+                                    <th class="py-4 px-5">Contact Info</th>
+                                    <th class="py-4 px-5">Subject/Category</th>
+                                    <th class="py-4 px-5">Message Body</th>
+                                    <th class="py-4 px-5">Received At</th>
+                                    <th class="py-4 px-5">Status</th>
+                                    <th class="py-4 px-5 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="contacts-table-body" class="divide-y divide-gray-800/50 text-xs">
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -2603,13 +2638,19 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             document.getElementById('stat-total-staff').textContent = (systemData.staff || []).length;
             document.getElementById('stat-total-trials').textContent = (systemData.anonymousTrialTrackers || []).length;
             document.getElementById('sessions-count-badge').textContent = \`\${(systemData.merchantSessions || []).length} STABLE CLIENTS\`;
+
+            const unreadCount = (systemData.contactMessages || []).filter(m => m.status === 'unread').length;
+            const badge = document.getElementById('contacts-count-badge');
+            if (badge) {
+                badge.textContent = \`\${unreadCount} UNREAD / \${(systemData.contactMessages || []).length} TOTAL\`;
+            }
         }
 
         function setTab(tab) {
             activeTab = tab;
             
             // Toggle highlight tabs
-            ['merchants', 'sessions', 'trials', 'rawdb', 'pricing'].forEach(t => {
+            ['merchants', 'sessions', 'trials', 'rawdb', 'pricing', 'contacts'].forEach(t => {
                 const el = document.getElementById(\`tab-\${t}\`);
                 const viewEl = document.getElementById(\`view-\${t}\`);
                 
@@ -2627,8 +2668,108 @@ app.get(['/admin', '/admin-cpanel'], (req, res) => {
             else if (tab === 'trials') renderTrials();
             else if (tab === 'rawdb') loadRawDbEditor();
             else if (tab === 'pricing') loadPricingPricesForm();
+            else if (tab === 'contacts') renderContacts();
 
             lucide.createIcons();
+        }
+
+        function renderContacts() {
+            const body = document.getElementById('contacts-table-body');
+            body.innerHTML = '';
+            const list = systemData.contactMessages || [];
+
+            if (list.length === 0) {
+                body.innerHTML = \`
+                    <tr>
+                        <td colspan="7" class="text-center py-12 text-gray-500 font-medium font-sans">
+                            <i data-lucide="mail" class="w-8 h-8 mx-auto mb-2 text-gray-650 block"></i>
+                            No contact form submissions have been recorded yet.
+                        </td>
+                    </tr>
+                \`;
+                lucide.createIcons();
+                return;
+            }
+
+            // Sort by createdAt descending
+            const sorted = [...list].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+            sorted.forEach(m => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-blue-500/5 transition-colors border-b border-gray-800/20';
+                
+                const dateStr = new Date(m.createdAt).toLocaleString();
+                const statusBadge = m.status === 'unread'
+                    ? '<span class="px-2 py-0.5 rounded-full bg-blue-950 border border-blue-900 text-blue-400 font-semibold text-[10px] uppercase">NEW</span>'
+                    : '<span class="px-2 py-0.5 rounded-full bg-gray-900 border border-gray-800 text-gray-500 font-semibold text-[10px] uppercase">READ</span>';
+
+                tr.innerHTML = \`
+                    <td class="py-4 px-5 font-bold text-white">\${m.name || 'Anonymous'}</td>
+                    <td class="py-4 px-5">
+                        <div class="font-semibold text-gray-200">\${m.email}</div>
+                        <div class="text-[10px] text-[#00A6FF] font-mono mt-0.5">\${m.whatsapp || 'No WhatsApp'}</div>
+                    </td>
+                    <td class="py-4 px-5">
+                        <span class="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-gray-300 text-[11px] font-semibold">\${m.category}</span>
+                    </td>
+                    <td class="py-4 px-5 text-gray-300 max-w-sm whitespace-pre-wrap break-words leading-relaxed">\${m.message}</td>
+                    <td class="py-4 px-5 text-gray-400 font-mono text-[11px]">\${dateStr}</td>
+                    <td class="py-4 px-5">\${statusBadge}</td>
+                    <td class="py-4 px-5 text-right space-x-1.5 whitespace-nowrap">
+                        \${m.status === 'unread' ? \`
+                            <button onclick="markContactRead('\${m.id}')" class="p-1 px-2.5 bg-blue-950/45 hover:bg-blue-900/45 text-blue-400 border border-blue-900/30 rounded text-[11px] font-bold transition-all">
+                                <i data-lucide="eye" class="w-3 h-3 inline mr-1"></i> Read
+                            </button>
+                        \` : ''}
+                        <button onclick="deleteContact('\${m.id}')" class="p-1 px-2.5 bg-red-950/40 hover:bg-red-900/50 text-red-400 border border-red-950 rounded text-[11px] font-bold transition-all">
+                            <i data-lucide="trash-2" class="w-3 h-3 inline mr-1"></i> Delete
+                        </button>
+                    </td>
+                \`;
+                body.appendChild(tr);
+            });
+            lucide.createIcons();
+        }
+
+        async function markContactRead(id) {
+            try {
+                const res = await fetch('/api/system-admin/contact-messages/mark-read', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-admin-password': adminPassword
+                    },
+                    body: JSON.stringify({ id })
+                });
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderContacts();
+                } else {
+                    alert('Failed to mark message as read.');
+                }
+            } catch (e) {
+                alert('Connection mismatch while updating status.');
+            }
+        }
+
+        async function deleteContact(id) {
+            if (!confirm('Are you sure you want to permanently delete this contact message?')) return;
+            try {
+                const res = await fetch(\`/api/system-admin/contact-messages/\${id}\`, {
+                    method: 'DELETE',
+                    headers: {
+                        'x-admin-password': adminPassword
+                    }
+                });
+                if (res.ok) {
+                    await fetchFreshDB();
+                    renderContacts();
+                } else {
+                    alert('Failed to delete message.');
+                }
+            } catch (e) {
+                alert('Connection mismatch while deleting message.');
+            }
         }
 
         async function fetchFreshDB() {
@@ -3190,6 +3331,72 @@ app.post("/api/system-admin/db", requireSystemAdmin, (req, res) => {
         res.json({ status: "success" });
     } catch (err: any) {
         res.status(500).json({ error: err.message || "Failed to persist database state" });
+    }
+});
+
+// Submit Contact Message Endpoint (Public)
+app.post("/api/contact", (req, res) => {
+    try {
+        const { name, email, whatsapp, message, category } = req.body;
+        if (!name || !email || !message) {
+            return res.status(400).json({ error: "Missing required fields (name, email, and message are required)." });
+        }
+        const db = readDB();
+        if (!db.contactMessages) {
+            db.contactMessages = [];
+        }
+        const newMessage = {
+            id: "msg_" + Math.random().toString(36).substring(2, 11),
+            name,
+            email,
+            whatsapp: whatsapp || "",
+            message,
+            category: category || "General Support",
+            createdAt: new Date().toISOString(),
+            status: "unread"
+        };
+        db.contactMessages.push(newMessage);
+        writeDB(db);
+        res.json({ status: "success", message: "Your message was sent successfully!", data: newMessage });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to submit contact message." });
+    }
+});
+
+// Admin Mark Contact Message Read Endpoint
+app.post("/api/system-admin/contact-messages/mark-read", requireSystemAdmin, (req, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) return res.status(400).json({ error: "Message ID required" });
+        const db = readDB();
+        if (db.contactMessages) {
+            db.contactMessages = db.contactMessages.map((m: any) => {
+                if (m.id === id) {
+                    return { ...m, status: "read" };
+                }
+                return m;
+            });
+            writeDB(db);
+        }
+        res.json({ status: "success" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to update message status" });
+    }
+});
+
+// Admin Delete Contact Message Endpoint
+app.delete("/api/system-admin/contact-messages/:id", requireSystemAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ error: "Message ID required" });
+        const db = readDB();
+        if (db.contactMessages) {
+            db.contactMessages = db.contactMessages.filter((m: any) => m.id !== id);
+            writeDB(db);
+        }
+        res.json({ status: "success" });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Failed to delete contact message" });
     }
 });
 

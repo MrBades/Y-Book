@@ -24,6 +24,7 @@ import InvoiceTemplateSettings from './components/InvoiceTemplateSettings';
 import BackupManager from './components/BackupManager';
 import PWAInstallHelper from './components/PWAInstallHelper';
 import SystemAdminController from './components/SystemAdminController';
+import ContactPage from './components/ContactPage';
 import OnboardingSummary from './components/OnboardingSummary';
 import PricingGrid from './components/PricingGrid';
 import CloseAccountCard from './components/CloseAccountCard';
@@ -66,7 +67,8 @@ import {
   Maximize2,
   Minimize2,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  Mail
 } from 'lucide-react';
 import { DashboardQuickActions } from './components/DashboardQuickActions';
 import { SyncNotificationChip } from './components/SyncNotificationChip';
@@ -881,7 +883,7 @@ export default function App() {
     };
   }, []);
 
-  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'privacy' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal' | 'pricing' | 'reset_pin'>(() => {
+  const [activeScreen, setActiveScreen] = useState<'landing' | 'login' | 'about' | 'terms' | 'privacy' | 'guest_invoice' | 'dashboard' | 'debtors' | 'profile' | 'invoice_preview' | 'products' | 'invoices' | 'customers' | 'terminal' | 'pricing' | 'reset_pin' | 'contact'>(() => {
     if (window.location.pathname.startsWith('/terminal/')) {
       return 'terminal';
     }
@@ -893,7 +895,7 @@ export default function App() {
     if (screenParam) return screenParam;
 
     const saved = localStorage.getItem('active_screen') as any;
-    const validScreens = ['landing', 'login', 'about', 'terms', 'privacy', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal', 'pricing', 'reset_pin'];
+    const validScreens = ['landing', 'login', 'about', 'terms', 'privacy', 'guest_invoice', 'dashboard', 'debtors', 'profile', 'invoice_preview', 'products', 'invoices', 'customers', 'terminal', 'pricing', 'reset_pin', 'contact'];
     if (saved && validScreens.includes(saved)) {
       if (saved === 'terminal' || saved === 'reset_pin') return 'landing';
       return saved;
@@ -2818,7 +2820,7 @@ export default function App() {
   };
 
   // Permit public navigation screen routes without authenticated sessions
-  const isPublicScreen = ['landing', 'about', 'terms', 'privacy', 'login', 'guest_invoice', 'invoice_preview', 'terminal', 'reset_pin'].includes(activeScreen);
+  const isPublicScreen = ['landing', 'about', 'terms', 'privacy', 'login', 'guest_invoice', 'invoice_preview', 'terminal', 'reset_pin', 'contact'].includes(activeScreen);
 
   useEffect(() => {
     if (!authChecking && !userState.authenticated && !isPublicScreen) {
@@ -3165,6 +3167,12 @@ export default function App() {
                     className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'privacy' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
                   >
                     Privacy Policy
+                  </button>
+                  <button
+                    onClick={() => setActiveScreen('contact')}
+                    className={`px-3 py-1.5 rounded-xl transition ${activeScreen === 'contact' ? 'bg-[#00A6FF] text-white font-bold' : 'hover:bg-white/10'}`}
+                  >
+                    Contact Us
                   </button>
                 </nav>
               )}
@@ -3565,6 +3573,17 @@ export default function App() {
                       <span>Privacy Policy</span>
                     </button>
 
+                    <button
+                      onClick={() => {
+                        setActiveScreen('contact');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 font-bold transition ${activeScreen === 'contact' ? 'bg-[#00A6FF] text-white' : 'hover:bg-white/5 text-gray-200'}`}
+                    >
+                      <Mail className="w-4 h-4 text-purple-400" />
+                      <span>Contact Us</span>
+                    </button>
+
                     <div className="border-t border-white/5 my-4 pt-4">
                       <span className="text-[9px] text-amber-400 font-extrabold uppercase tracking-wider block mb-2">Store Workspaces (🔒 Lock)</span>
                     </div>
@@ -3747,6 +3766,18 @@ export default function App() {
                       <span>Privacy Policy</span>
                     </button>
 
+                    {/* 9. Contact Us */}
+                    <button
+                      onClick={() => {
+                        setActiveScreen('contact');
+                        setIsSideMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 rounded-xl flex items-center gap-3 font-medium transition ${activeScreen === 'contact' ? 'text-[#00A6FF]' : 'hover:text-white text-gray-400'}`}
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span>Contact Ownership</span>
+                    </button>
+
 
 
                   </>
@@ -3779,6 +3810,10 @@ export default function App() {
 
         {activeScreen === 'privacy' && (
           <PrivacyPage onNavigate={setActiveScreen} isAuthenticated={userState.authenticated} />
+        )}
+
+        {activeScreen === 'contact' && (
+          <ContactPage onNavigate={setActiveScreen} isAuthenticated={userState.authenticated} />
         )}
 
         {activeScreen === 'guest_invoice' && (
@@ -5571,6 +5606,16 @@ export default function App() {
                 className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'privacy' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
               >
                 Privacy Policy
+              </button>
+              <span className="text-white/20 select-none">|</span>
+              <button 
+                onClick={() => {
+                  setActiveScreen('contact');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }} 
+                className={`hover:text-[#00A6FF] hover:underline transition font-semibold ${activeScreen === 'contact' ? 'text-[#00A6FF] underline font-bold' : 'text-gray-300'}`}
+              >
+                Contact Support
               </button>
               {currentUserRole === 'owner' && (
                 <>

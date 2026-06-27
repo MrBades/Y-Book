@@ -82,8 +82,27 @@ export default function SmartWidget({
     setIsLoading(true);
     
     const parseAmountLocal = (valStr: string): number => {
-      const val = parseFloat(valStr.replace(/,/g, ''));
-      return isNaN(val) ? 0.0 : val;
+      if (!valStr) return 0.0;
+      const clean = valStr.trim();
+      const match = clean.match(/^([\d,.]+)\s*(k|kilo|thousand|m|million|b|billion)?/i);
+      if (!match) return 0.0;
+      
+      const numPart = parseFloat(match[1].replace(/,/g, ''));
+      if (isNaN(numPart)) return 0.0;
+      
+      if (match[2]) {
+        const mult = match[2].toLowerCase();
+        if (['k', 'kilo', 'thousand'].includes(mult)) {
+          return numPart * 1000;
+        }
+        if (['m', 'million'].includes(mult)) {
+          return numPart * 1000000;
+        }
+        if (['b', 'billion'].includes(mult)) {
+          return numPart * 1000000000;
+        }
+      }
+      return numPart;
     };
 
     let extractedCustomer = 'Walk-in Customer';
@@ -93,8 +112,16 @@ export default function SmartWidget({
     // Normalize text into structured lines before parsing
     const normalizedText = text
       .replace(/Customer:\s*([^,\n]+)(?:,)/gi, 'Customer: $1\n')
-      .replace(/paid\s+([\d,]+)/gi, 'Paid: $1\n')
-      .replace(/,\s*/g, '\n');
+      .replace(/paid\s+([\d,.]+\s*(?:k|kilo|thousand|m|million|b|billion)?)/gi, 'Paid: $1\n')
+      .replace(/,(\s*)/g, (match, spaces, offset, string) => {
+        const charBefore = string[offset - 1];
+        const charAfter = string[offset + match.length];
+        if (/\d/.test(charBefore) && /\d/.test(charAfter)) {
+          // Keep the comma if it is sandwiched between two digits (e.g., 1,000)
+          return match;
+        }
+        return '\n';
+      });
 
     const lines = normalizedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     
@@ -102,11 +129,11 @@ export default function SmartWidget({
       if (line.toLowerCase().startsWith('customer:')) {
         extractedCustomer = line.replace(/customer:/i, '').trim();
       } else if (line.toLowerCase().includes('paid')) {
-        const amtMatch = line.match(/[\d,]+/);
+        const amtMatch = line.match(/[\d,.]+\s*(?:k|kilo|thousand|m|million|b|billion)?/i);
         if (amtMatch) amountPaidSum = parseAmountLocal(amtMatch[0]);
       } else {
-        // Improved regex to handle goods and services: "15 bags of cement at 8500", "5 hours Web Design at 15000"
-        const itemMatch = line.match(/(\d+)\s*(?:bags?|packs?|sacks?|units?|pcs?|pieces?|hours?|sessions?)?\s*(?:of)?\s*(.*?)(?:\s+(?:at|@|for)?\s*([\d,]+))?$/i);
+        // Improved regex to handle goods and services: "15 bags of cement at 8.5k", "5 hours Web Design at 15,000"
+        const itemMatch = line.match(/(\d+)\s*(?:bags?|packs?|sacks?|units?|pcs?|pieces?|hours?|sessions?)?\s*(?:of)?\s*(.*?)(?:\s+(?:at|@|for)?\s*([\d,.]+\s*(?:k|kilo|thousand|m|million|b|billion)?))?$/i);
         
         if (itemMatch) {
           const qty = parseInt(itemMatch[1], 10);
