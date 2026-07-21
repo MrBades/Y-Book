@@ -7,7 +7,7 @@
       "destination": "https://yinvo.yeedem.com/:path*",
       "permanent": true
     }
-  ]
+  ],
   "builds": [
     {
       "src": "package.json",
