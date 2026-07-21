@@ -1,5 +1,13 @@
 {
   "version": 2,
+  
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://yinvo.yeedem.com/:path*",
+      "permanent": true
+    }
+  ]
   "builds": [
     {
       "src": "package.json",
